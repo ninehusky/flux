@@ -1,0 +1,19 @@
+[package]
+name = "flux-opt"
+version = "0.1.0"
+
+edition.workspace = true
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+flux-macros.workspace = true
+flux-config.workspace = true
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[lints]
+workspace = true
