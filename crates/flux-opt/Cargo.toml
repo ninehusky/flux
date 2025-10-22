@@ -11,6 +11,7 @@ test = false
 [dependencies]
 flux-macros.workspace = true
 flux-config.workspace = true
+flux-middle.workspace = true
 
 [package.metadata.rust-analyzer]
 rustc_private = true

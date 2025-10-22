@@ -533,6 +533,7 @@ dependencies = [
  "flux-macros",
  "flux-metadata",
  "flux-middle",
+ "flux-opt",
  "flux-refineck",
  "flux-rustc-bridge",
  "flux-syntax",
@@ -636,6 +637,15 @@ dependencies = [
  "serde_json",
  "toposort-scc",
  "tracing",
+]
+
+[[package]]
+name = "flux-opt"
+version = "0.1.0"
+dependencies = [
+ "flux-config",
+ "flux-macros",
+ "flux-middle",
 ]
 
 [[package]]

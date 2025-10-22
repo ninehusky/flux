@@ -16,7 +16,7 @@ use flux_middle::{
     queries::{Providers, QueryResult},
     timings,
 };
-use flux_opt as flux_opt;
+use flux_opt::{self as flux_opt, entry_point, run_mir_analysis_on_all_functions};
 use flux_refineck as refineck;
 use itertools::Itertools;
 use rustc_borrowck::consumers::ConsumerOptions;
@@ -79,11 +79,12 @@ impl FluxCallbacks {
             if result.is_ok() {
                 encode_and_save_metadata(genv);
             }
+
+            run_mir_analysis_on_all_functions(genv);
         });
+
         sess.finish_diagnostics();
 
-        // Call flux_opt entry point
-        flux_opt::entry_point();
     }
 }
 
