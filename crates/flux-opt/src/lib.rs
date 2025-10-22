@@ -3,7 +3,7 @@ extern crate rustc_middle;
 extern crate rustc_hir;
 
 use flux_middle::global_env::GlobalEnv;
-use rustc_middle::{ty::TyCtxt};
+use rustc_middle::{mir::{Statement, TerminatorKind}, ty::TyCtxt};
 use rustc_hir::{
     def::DefKind,
     def_id::{DefId, LOCAL_CRATE, LocalDefId},
@@ -38,22 +38,27 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) {
 
     let fn_name = tcx.def_path_str(def_id.to_def_id());
 
-    // get optimized MIR (this triggers pipeline if needed)
-    let mir = tcx.optimized_mir(def_id.to_def_id());
-    // write pretty MIR to stdout (or a file)
-    if let Err(e) = write_mir_pretty(tcx, Some(def_id.to_def_id()), &mut std::io::stdout()) {
-        // fallback to debug
-        eprintln!("write_mir_pretty failed: {:?}\nDumping Debug:", e);
-        println!("{:#?}", &*mir);
-    } else {
-        let err_file = format!("mir_{}.txt", fn_name.replace("::", "_"));
-        let mut file = std::fs::File::create(&err_file).expect("Could not create MIR output file");
-        let absolute_path = std::fs::canonicalize(&err_file).expect("Could not get absolute path");
-        write_mir_pretty(tcx, Some(def_id.to_def_id()), &mut file).unwrap();
-        panic!("MIR for function '{}' written to {}", fn_name, absolute_path.display());
-
-
+       // 🎯 FIX: Check if this definition has a body before accessing MIR
+    if !tcx.is_mir_available(def_id.to_def_id()) {
+        println!("⚠️  Skipping {}: No MIR available (likely a trait method declaration)", fn_name);
+        return;
     }
-    
+
+    for basic_block in tcx.optimized_mir(def_id.to_def_id()).basic_blocks.iter() {
+        println!("Function: {}, Basic Block: {:?}", fn_name, basic_block);
+        let terminator = &basic_block.terminator;
+        if terminator.is_none() {
+            continue;
+        }
+        let terminator = terminator.as_ref().unwrap();
+        match &terminator.kind {
+            TerminatorKind::Assert { cond, expected, msg, target, .. } => {
+                // Print to stderr
+                eprintln!("Inside function: {}, Found an assert saying {:?}", fn_name, msg);
+            }
+            _ => {}
+        }
+    }
+
     println!("=== FLUX-OPT: Finished MIR analysis ===");
 }
