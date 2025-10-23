@@ -3,7 +3,7 @@ extern crate rustc_middle;
 extern crate rustc_hir;
 
 use flux_middle::global_env::GlobalEnv;
-use rustc_middle::{mir::{Statement, TerminatorKind}, ty::TyCtxt};
+use rustc_middle::{mir::{AssertKind, BasicBlock, BasicBlockData, Body, Local, Operand, Place, Rvalue, Statement, StatementKind, TerminatorKind, VarDebugInfoContents}, ty::TyCtxt};
 use rustc_hir::{
     def::DefKind,
     def_id::{DefId, LOCAL_CRATE, LocalDefId},
@@ -66,6 +66,34 @@ fn parse_fn_name(fn_name: &str) -> &str {
     }
 }
 
+fn find_assignment<'tcx>(
+    block_data: &BasicBlockData<'tcx>,
+    target: Local,
+) -> Option<(Place<'tcx>, Rvalue<'tcx>)> {
+    for statement in block_data.statements.iter() {
+        if let StatementKind::Assign(vals) = &statement.kind {
+            let place = &vals.0;
+            let rvalue = &vals.1;
+            if place.local == target {
+                println!("statement {:?} has kind {:?}", statement, statement.kind);
+                return Some((place.clone(), rvalue.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn debug_name_for_local<'tcx>(body: &Body<'tcx>, local: Local) -> Option<String> {
+    for var in &body.var_debug_info {
+        if let VarDebugInfoContents::Place(place) = &var.value {
+            if place.local == local {
+                return Some(var.name.to_string());
+            }
+        }
+    }
+    None
+}
+
 pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
     let fn_name = tcx.def_path_str(def_id.to_def_id());
     println!("🔎 Starting analysis of {}", fn_name);
@@ -86,6 +114,26 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
         let terminator = terminator.as_ref().unwrap();
         match &terminator.kind {
             TerminatorKind::Assert { cond, expected, msg, target, .. } => {
+                match &**msg {
+                    AssertKind::RemainderByZero(op) => {
+                        if let Operand::Copy(place) | Operand::Move(place) = cond {
+                            let local = place.local;
+                            // print the mir.
+                            eprintln!("MIR for function {}:\n", fn_name);
+                            eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
+                            match find_assignment(basic_block, local) {
+                                Some((place, rvalue)) => {
+                                    eprintln!("Assignment found for RemainderByZero assert in function {}: {:?} = {:?}", fn_name, place, rvalue);
+                                }
+                                None => {
+                                    eprintln!("No assignment found for local {:?} in function {}", local, fn_name);
+                                }
+                            }
+                        }
+                        eprintln!("Inside function: {}, Found an assert for RemainderByZero", fn_name);
+                    }
+                    _ => (),
+                };
                 // Print to stderr
                 panics += 1;
                 eprintln!("Inside function: {}, Found an assert saying {:?}", fn_name, msg);
