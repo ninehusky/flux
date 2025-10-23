@@ -1,14 +1,18 @@
 #![feature(rustc_private)]
-extern crate rustc_middle;
 extern crate rustc_hir;
+extern crate rustc_middle;
 
 use flux_middle::global_env::GlobalEnv;
-use rustc_middle::{mir::{AssertKind, BasicBlock, BasicBlockData, Body, Local, Operand, Place, Rvalue, Statement, StatementKind, TerminatorKind, VarDebugInfoContents}, ty::TyCtxt};
 use rustc_hir::{
     def::DefKind,
     def_id::{DefId, LOCAL_CRATE, LocalDefId},
 };
-use rustc_middle::mir::pretty::write_mir_pretty;
+use rustc_middle::{
+    mir::{
+        pretty::write_mir_pretty, AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Const, Local, Operand, Place, Rvalue, Statement, StatementKind, TerminatorKind, UnOp, VarDebugInfoContents
+    },
+    ty::TyCtxt,
+};
 
 /// These are the ring buffer functions that we actually
 /// care about.
@@ -32,10 +36,9 @@ pub fn run_mir_analysis_on_all_functions(genv: GlobalEnv) {
     let crate_items = tcx.hir_crate_items(());
 
     let mut total_panics = 0;
-    
+
     // Iterate through all items in the crate
     for def_id in crate_items.definitions() {
-        
         // Check if this item is a function
         match tcx.def_kind(def_id) {
             DefKind::Fn | DefKind::AssocFn => {
@@ -57,12 +60,85 @@ pub fn run_mir_analysis_on_all_functions(genv: GlobalEnv) {
     }
 }
 
-fn parse_fn_name(fn_name: &str) -> &str {
-    // Find the last occurrence of "::" and return the substring after it
-    if let Some(pos) = fn_name.rfind("::") {
-        &fn_name[pos + 2..]
-    } else {
-        fn_name
+fn prettify_operand_one_block<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    op: &Operand<'tcx>,
+    block: &BasicBlockData<'tcx>,
+    body: &Body<'tcx>,
+) -> String {
+    match op {
+        Operand::Copy(place) | Operand::Move(place) => {
+            prettify_local_one_block(tcx, place.local, block, body)
+                .unwrap_or(format!("_{}", place.local.index()))
+        }
+        Operand::Constant(c) => {
+            if let Some(scalar_int) = c.const_.try_to_scalar_int() {
+                return format!("{}", scalar_int);
+            }
+            format!("{:?}", c)
+        }
+    }
+}
+
+/// Pretty-print the value of a local within a single basic block.
+/// Stops at debug locals or function arguments.
+fn prettify_local_one_block<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    local: Local,
+    block: &BasicBlockData<'tcx>,
+    body: &Body<'tcx>,
+) -> Option<String> {
+    // Check if the local is a debug variable
+    if let Some(name) = debug_name_for_local(body, local) {
+        return Some(name);
+    }
+
+    let og_assignment = find_assignment(block, local);
+    match og_assignment {
+        Some((_, rvalue)) => {
+            match rvalue {
+                Rvalue::BinaryOp(op, args) => {
+                    let op_str = match op {
+                        BinOp::Eq => "==",
+                        _ => todo!(),
+                    };
+                    let left = prettify_operand_one_block(tcx, &args.0, block, body);
+                    let right = prettify_operand_one_block(tcx, &args.1, block, body);
+                    Some(format!("({:?} {} {})", op_str, left, right))
+                }
+                // suspicious.
+                Rvalue::UnaryOp(op, arg) => {
+                    // let op_str = match op {
+                    //     UnOp::Not => "!",
+                    // }
+                    let op_str = {
+                        match op {
+                            UnOp::PtrMetadata => {
+                                // verify that the argument is a slice
+                                let local_decls = &body.local_decls;
+                                let arg_type = arg.ty(local_decls, tcx);
+                                if arg_type.is_array_slice() || arg_type.is_slice() {
+                                    "len"
+                                } else {
+                                    "ptr_metadata"
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    };
+                    let inner = prettify_operand_one_block(tcx, &arg, block, body);
+                    Some(format!("({} {})", op_str, inner))
+                }
+                Rvalue::CopyForDeref(arg) | Rvalue::Ref(_, _, arg) => {
+                    Some(prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body))
+                }
+                _ => {
+                    eprintln!("I don't know what to do with a {:?}!", rvalue);
+                    None
+                }
+            }
+        }
+        None => None,
     }
 }
 
@@ -70,17 +146,21 @@ fn find_assignment<'tcx>(
     block_data: &BasicBlockData<'tcx>,
     target: Local,
 ) -> Option<(Place<'tcx>, Rvalue<'tcx>)> {
-    for statement in block_data.statements.iter() {
+    for statement in block_data.statements.iter().rev() {
         if let StatementKind::Assign(vals) = &statement.kind {
             let place = &vals.0;
             let rvalue = &vals.1;
             if place.local == target {
-                println!("statement {:?} has kind {:?}", statement, statement.kind);
                 return Some((place.clone(), rvalue.clone()));
             }
         }
     }
     None
+}
+
+fn parse_fn_name(fn_name: &str) -> &str {
+    // Find the last occurrence of "::" and return the substring after it
+    if let Some(pos) = fn_name.rfind("::") { &fn_name[pos + 2..] } else { fn_name }
 }
 
 fn debug_name_for_local<'tcx>(body: &Body<'tcx>, local: Local) -> Option<String> {
@@ -115,28 +195,28 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
         match &terminator.kind {
             TerminatorKind::Assert { cond, expected, msg, target, .. } => {
                 match &**msg {
-                    AssertKind::RemainderByZero(op) => {
+                    AssertKind::RemainderByZero(_) => {
                         if let Operand::Copy(place) | Operand::Move(place) = cond {
                             let local = place.local;
                             // print the mir.
                             eprintln!("MIR for function {}:\n", fn_name);
                             eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
-                            match find_assignment(basic_block, local) {
-                                Some((place, rvalue)) => {
-                                    eprintln!("Assignment found for RemainderByZero assert in function {}: {:?} = {:?}", fn_name, place, rvalue);
-                                }
-                                None => {
-                                    eprintln!("No assignment found for local {:?} in function {}", local, fn_name);
-                                }
-                            }
+                            let debug_msg = prettify_local_one_block(
+                                tcx,
+                                local,
+                                basic_block,
+                                &tcx.optimized_mir(def_id.to_def_id()),
+                            );
+                            eprintln!(
+                                "The final expression:\n{}",
+                                debug_msg.unwrap_or("Could not prettify expression".to_string())
+                            );
                         }
-                        eprintln!("Inside function: {}, Found an assert for RemainderByZero", fn_name);
                     }
                     _ => (),
                 };
                 // Print to stderr
                 panics += 1;
-                eprintln!("Inside function: {}, Found an assert saying {:?}", fn_name, msg);
             }
             _ => {}
         }
