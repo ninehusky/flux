@@ -9,7 +9,9 @@ use rustc_hir::{
 };
 use rustc_middle::{
     mir::{
-        pretty::write_mir_pretty, AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Const, Local, Operand, Place, Rvalue, Statement, StatementKind, TerminatorKind, UnOp, VarDebugInfoContents
+        AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Const, Local, Operand, Place,
+        ProjectionElem, Rvalue, Statement, StatementKind, TerminatorKind, UnOp,
+        VarDebugInfoContents, pretty::write_mir_pretty,
     },
     ty::TyCtxt,
 };
@@ -68,8 +70,30 @@ fn prettify_operand_one_block<'tcx>(
 ) -> String {
     match op {
         Operand::Copy(place) | Operand::Move(place) => {
-            prettify_local_one_block(tcx, place.local, block, body)
-                .unwrap_or(format!("_{}", place.local.index()))
+            let obj = prettify_local_one_block(tcx, place.local, block, body)
+                .unwrap_or(format!("_{}", place.local.index()));
+            // try to get fields
+            let arg = place;
+            if arg
+                .projection
+                .iter()
+                .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
+            {
+                let field = arg.projection.iter().find_map(|elem| {
+                    if let ProjectionElem::Field(field_idx, _) = elem {
+                        Some(field_idx)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(field_idx) = field {
+                    format!("{}.{}", obj, field_idx.index())
+                } else {
+                    obj
+                }
+            } else {
+                obj
+            }
         }
         Operand::Constant(c) => {
             if let Some(scalar_int) = c.const_.try_to_scalar_int() {
@@ -110,9 +134,6 @@ fn prettify_local_one_block<'tcx>(
                 }
                 // suspicious.
                 Rvalue::UnaryOp(op, arg) => {
-                    // let op_str = match op {
-                    //     UnOp::Not => "!",
-                    // }
                     let op_str = {
                         match op {
                             UnOp::PtrMetadata => {
@@ -129,18 +150,64 @@ fn prettify_local_one_block<'tcx>(
                         }
                     };
                     let inner = prettify_operand_one_block(tcx, &arg, block, body);
-                    Some(format!("({} {})", op_str, inner))
+                    // Some(format!("({} {})", op_str, inner))
+                    Some(inner)
                 }
                 Rvalue::CopyForDeref(arg) | Rvalue::Ref(_, _, arg) => {
-                    Some(prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body))
+                    let obj =
+                        prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
+                    if arg
+                        .projection
+                        .iter()
+                        .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
+                    {
+                        let field = arg.projection.iter().find_map(|elem| {
+                            if let ProjectionElem::Field(field_idx, _) = elem {
+                                Some(field_idx)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(field_idx) = field {
+                            Some(format!("{}.{:?}", obj, field_idx))
+                        } else {
+                            Some(obj)
+                        }
+                    } else {
+                        Some(obj)
+                    }
                 }
                 Rvalue::RawPtr(_, arg) => {
-                    eprintln!("this is a raw ptr to {:?}", arg);
-                    Some(prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body))
+                    let obj =
+                        prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
+                    if arg
+                        .projection
+                        .iter()
+                        .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
+                    {
+                        let field = arg.projection.iter().find_map(|elem| {
+                            if let ProjectionElem::Field(field_idx, _) = elem {
+                                Some(field_idx)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(field_idx) = field {
+                            let format_str = match field_idx.index() {
+                                0 => "ring",
+                                1 => "head",
+                                2 => "tail",
+                                _ => "unknown_field",
+                            };
+                            Some(format!("{}.{}", obj, format_str))
+                        } else {
+                            Some(obj)
+                        }
+                    } else {
+                        Some(obj)
+                    }
                 }
-                Rvalue::Use(arg) => {
-                    Some(prettify_operand_one_block(tcx, &arg, block, body))
-                }
+                Rvalue::Use(arg) => Some(prettify_operand_one_block(tcx, &arg, block, body)),
                 _ => {
                     eprintln!("I don't know what to do with a {:?}!", rvalue);
                     eprintln!("Its enum type is: rvalue::{:?}", std::mem::discriminant(&rvalue));
@@ -194,6 +261,10 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
         return 0;
     }
 
+    // print the MIR
+    // eprintln!("MIR for function {}:\n", fn_name);
+    // eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
+
     let mut panics = 0;
 
     for basic_block in tcx.optimized_mir(def_id.to_def_id()).basic_blocks.iter() {
@@ -202,15 +273,13 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
             continue;
         }
         let terminator = terminator.as_ref().unwrap();
+        let source_map = tcx.sess.source_map();
         match &terminator.kind {
             TerminatorKind::Assert { cond, expected, msg, target, .. } => {
                 match &**msg {
                     AssertKind::BoundsCheck { len, index } => {
                         if let Operand::Copy(place) | Operand::Move(place) = cond {
                             let local = place.local;
-                            // print the mir.
-                            eprintln!("MIR for function {}:\n", fn_name);
-                            eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
                             let debug_msg = prettify_local_one_block(
                                 tcx,
                                 local,
@@ -218,31 +287,43 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
                                 &tcx.optimized_mir(def_id.to_def_id()),
                             );
                             eprintln!("Found an assertion checking for: Bounds Check");
+                            eprintln!("It lives at {:?}", terminator.source_info.span);
+                            if let Ok(snippet) = source_map.span_to_snippet(terminator.source_info.span) {
+                                eprintln!("Source snippet: {}", snippet);
+                            } else {
+                                eprintln!("(could not retrieve source snippet)");
+                            }
                             eprintln!(
-                                "The final expression:\n{}",
+                                "The assert expression:\n{}\n",
                                 debug_msg.unwrap_or("Could not prettify expression".to_string())
                             );
                         }
-                    },
+                    }
                     AssertKind::RemainderByZero(_) | AssertKind::DivisionByZero(_) => {
                         if let Operand::Copy(place) | Operand::Move(place) = cond {
                             let local = place.local;
-                            // print the mir.
-                            eprintln!("MIR for function {}:\n", fn_name);
-                            eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
                             let debug_msg = prettify_local_one_block(
                                 tcx,
                                 local,
                                 basic_block,
                                 &tcx.optimized_mir(def_id.to_def_id()),
                             );
-                            eprintln!("Found an assertion checking for: {}", match &**msg {
-                                AssertKind::RemainderByZero(_) => "Remainder By Zero",
-                                AssertKind::DivisionByZero(_) => "Division By Zero",
-                                _ => "Unknown",
-                            });
                             eprintln!(
-                                "The final expression:\n{}",
+                                "Found an assertion checking for: {}",
+                                match &**msg {
+                                    AssertKind::RemainderByZero(_) => "Remainder By Zero",
+                                    AssertKind::DivisionByZero(_) => "Division By Zero",
+                                    _ => "Unknown",
+                                }
+                            );
+                            eprintln!("It lives at {:?}", terminator.source_info.span);
+                            if let Ok(snippet) = source_map.span_to_snippet(terminator.source_info.span) {
+                                eprintln!("Source snippet: {}", snippet);
+                            } else {
+                                eprintln!("(could not retrieve source snippet)");
+                            }
+                            eprintln!(
+                                "The assert expression:\n{}\n",
                                 debug_msg.unwrap_or("Could not prettify expression".to_string())
                             );
                         }
