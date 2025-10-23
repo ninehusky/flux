@@ -100,7 +100,9 @@ fn prettify_local_one_block<'tcx>(
                 Rvalue::BinaryOp(op, args) => {
                     let op_str = match op {
                         BinOp::Eq => "==",
-                        _ => todo!(),
+                        BinOp::Lt => "<",
+                        BinOp::Le => "<=",
+                        _ => todo!("I have no idea how to format a {:?}", op),
                     };
                     let left = prettify_operand_one_block(tcx, &args.0, block, body);
                     let right = prettify_operand_one_block(tcx, &args.1, block, body);
@@ -132,8 +134,16 @@ fn prettify_local_one_block<'tcx>(
                 Rvalue::CopyForDeref(arg) | Rvalue::Ref(_, _, arg) => {
                     Some(prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body))
                 }
+                Rvalue::RawPtr(_, arg) => {
+                    eprintln!("this is a raw ptr to {:?}", arg);
+                    Some(prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body))
+                }
+                Rvalue::Use(arg) => {
+                    Some(prettify_operand_one_block(tcx, &arg, block, body))
+                }
                 _ => {
                     eprintln!("I don't know what to do with a {:?}!", rvalue);
+                    eprintln!("Its enum type is: rvalue::{:?}", std::mem::discriminant(&rvalue));
                     None
                 }
             }
@@ -195,7 +205,7 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
         match &terminator.kind {
             TerminatorKind::Assert { cond, expected, msg, target, .. } => {
                 match &**msg {
-                    AssertKind::RemainderByZero(_) => {
+                    AssertKind::BoundsCheck { len, index } => {
                         if let Operand::Copy(place) | Operand::Move(place) = cond {
                             let local = place.local;
                             // print the mir.
@@ -207,6 +217,30 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
                                 basic_block,
                                 &tcx.optimized_mir(def_id.to_def_id()),
                             );
+                            eprintln!("Found an assertion checking for: Bounds Check");
+                            eprintln!(
+                                "The final expression:\n{}",
+                                debug_msg.unwrap_or("Could not prettify expression".to_string())
+                            );
+                        }
+                    },
+                    AssertKind::RemainderByZero(_) | AssertKind::DivisionByZero(_) => {
+                        if let Operand::Copy(place) | Operand::Move(place) = cond {
+                            let local = place.local;
+                            // print the mir.
+                            eprintln!("MIR for function {}:\n", fn_name);
+                            eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
+                            let debug_msg = prettify_local_one_block(
+                                tcx,
+                                local,
+                                basic_block,
+                                &tcx.optimized_mir(def_id.to_def_id()),
+                            );
+                            eprintln!("Found an assertion checking for: {}", match &**msg {
+                                AssertKind::RemainderByZero(_) => "Remainder By Zero",
+                                AssertKind::DivisionByZero(_) => "Division By Zero",
+                                _ => "Unknown",
+                            });
                             eprintln!(
                                 "The final expression:\n{}",
                                 debug_msg.unwrap_or("Could not prettify expression".to_string())
