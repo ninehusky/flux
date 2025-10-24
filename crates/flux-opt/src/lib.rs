@@ -1,55 +1,46 @@
 #![feature(rustc_private)]
 extern crate rustc_hir;
 extern crate rustc_middle;
+extern crate rustc_span;
+
+use std::collections::HashMap;
 
 use flux_middle::global_env::GlobalEnv;
-use rustc_hir::{
-    def::DefKind,
-    def_id::{DefId, LOCAL_CRATE, LocalDefId},
-};
+use rustc_hir::{def::DefKind, def_id::LocalDefId};
 use rustc_middle::{
     mir::{
-        AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Const, Local, Operand, Place,
-        ProjectionElem, Rvalue, Statement, StatementKind, TerminatorKind, UnOp,
-        VarDebugInfoContents, pretty::write_mir_pretty,
+        AssertKind, BasicBlockData, BinOp, Body, Local, Operand, Place, ProjectionElem, Rvalue,
+        StatementKind, TerminatorKind, UnOp, VarDebugInfoContents,
     },
     ty::TyCtxt,
 };
 
-/// These are the ring buffer functions that we actually
-/// care about.
-const EXPECTED_FUNCTIONS: &[&str] = &[
-    "available_len",
-    "as_slices",
-    "has_elements",
-    "is_full",
-    "len",
-    "enqueue",
-    "push",
-    "dequeue",
-    "remove_first_matching",
-    "empty",
-    "retain",
-];
+use crate::hint::FluxHint;
 
-// 🎯 NEW: Helper function to run MIR analysis on all functions
+mod hint;
+
 pub fn run_mir_analysis_on_all_functions(genv: GlobalEnv) {
     let tcx = genv.tcx();
     let crate_items = tcx.hir_crate_items(());
 
-    let mut total_panics = 0;
+    let mut panics_per_module: HashMap<String, Vec<FluxHint>> = HashMap::new();
 
     // Iterate through all items in the crate
     for def_id in crate_items.definitions() {
-        // Check if this item is a function
+        let def_path = tcx.def_path_str(def_id);
         match tcx.def_kind(def_id) {
             DefKind::Fn | DefKind::AssocFn => {
-                let def_path = tcx.def_path_str(def_id);
-                let fn_name = parse_fn_name(&def_path);
-                if EXPECTED_FUNCTIONS.contains(&fn_name) {
-                    // Call your entry_point for this specific function
-                    total_panics += entry_point(tcx, def_id);
-                }
+                let module_path = def_path
+                    .rsplit_once("::") // split into (before, after)
+                    .map(|(module, _)| module)
+                    .unwrap_or("<root>")
+                    .to_string();
+
+                let hints = entry_point(tcx, def_id);
+                panics_per_module
+                    .entry(module_path)
+                    .or_default()
+                    .extend(hints);
             }
             _ => {
                 // Skip non-function items (structs, enums, etc.)
@@ -57,8 +48,15 @@ pub fn run_mir_analysis_on_all_functions(genv: GlobalEnv) {
         }
     }
 
-    if total_panics > 0 {
-        eprintln!("=== FLUX-OPT: Total panics found across all functions: {} ===", total_panics);
+    for module in panics_per_module.keys() {
+        let hints = &panics_per_module[module];
+        eprintln!("=== FLUX-OPT: Panics found in module '{}': {} ===", module, hints.len());
+        for hint in hints {
+            eprintln!(
+                "- Function: {}, Panic Type: {:?}, Assertion: {}, Span: {:?}",
+                hint.function, hint.panic_type, hint.assertion, hint.span
+            );
+        }
     }
 }
 
@@ -74,26 +72,38 @@ fn prettify_operand_one_block<'tcx>(
                 .unwrap_or(format!("_{}", place.local.index()));
             // try to get fields
             let arg = place;
-            if arg
-                .projection
-                .iter()
-                .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
-            {
-                let field = arg.projection.iter().find_map(|elem| {
-                    if let ProjectionElem::Field(field_idx, _) = elem {
-                        Some(field_idx)
-                    } else {
-                        None
-                    }
-                });
-                if let Some(field_idx) = field {
-                    format!("{}.{}", obj, field_idx.index())
-                } else {
-                    obj
-                }
-            } else {
-                obj
+            eprintln!("Projection chain: {:?}", arg.projection);
+
+            if arg.projection.is_empty() || arg.projection.len() < 2 {
+                return obj;
             }
+
+            // match on one dereference and one field access
+            // For field access like `self._0`, you want the type of `self` (the base)
+            if let ProjectionElem::Field(field_idx, _) = &arg.projection[1] {
+                // Get the type of the place BEFORE the field projection
+                let base_place = Place {
+                    local: place.local,
+                    projection: tcx.mk_place_elems(&place.projection[..place.projection.len() - 1]),
+                };
+
+                // This gives you the type of `self` (the parent/base type)
+                let base_ty = base_place.ty(&body.local_decls, tcx).ty;
+
+                // Now you can get the ADT definition to look up field names
+                if let Some(adt_def) = base_ty.ty_adt_def() {
+                    // Fixed syntax
+                    if let Some(field_def) = adt_def.all_fields().nth(field_idx.as_usize()) {
+                        let field_name = field_def.name.as_str();
+                        return format!("{}.{}", obj, field_name);
+                    }
+                }
+
+                // Fallback if we can't get the field name
+                return format!("{}._{}", obj, field_idx.index());
+            }
+
+            obj
         }
         Operand::Constant(c) => {
             if let Some(scalar_int) = c.const_.try_to_scalar_int() {
@@ -251,21 +261,16 @@ fn debug_name_for_local<'tcx>(body: &Body<'tcx>, local: Local) -> Option<String>
     None
 }
 
-pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
+pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> {
     let fn_name = tcx.def_path_str(def_id.to_def_id());
     println!("🔎 Starting analysis of {}", fn_name);
 
-    // 🎯 FIX: Check if this definition has a body before accessing MIR
     if !tcx.is_mir_available(def_id.to_def_id()) {
         println!("⚠️  Skipping {}: No MIR available (likely a trait method declaration)", fn_name);
-        return 0;
+        return vec![];
     }
 
-    // print the MIR
-    // eprintln!("MIR for function {}:\n", fn_name);
-    // eprintln!("{:#?}", tcx.optimized_mir(def_id.to_def_id()));
-
-    let mut panics = 0;
+    let mut panics = vec![];
 
     for basic_block in tcx.optimized_mir(def_id.to_def_id()).basic_blocks.iter() {
         let terminator = &basic_block.terminator;
@@ -286,17 +291,16 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
                                 basic_block,
                                 &tcx.optimized_mir(def_id.to_def_id()),
                             );
-                            eprintln!("Found an assertion checking for: Bounds Check");
-                            eprintln!("It lives at {:?}", terminator.source_info.span);
-                            if let Ok(snippet) = source_map.span_to_snippet(terminator.source_info.span) {
-                                eprintln!("Source snippet: {}", snippet);
-                            } else {
-                                eprintln!("(could not retrieve source snippet)");
+
+                            if let Some(assertion_str) = debug_msg.clone() {
+                                let hint = FluxHint {
+                                    span: terminator.source_info.span,
+                                    assertion: assertion_str,
+                                    panic_type: hint::FluxPanicType::BoundsCheck,
+                                    function: parse_fn_name(&fn_name).to_string(),
+                                };
+                                panics.push(hint);
                             }
-                            eprintln!(
-                                "The assert expression:\n{}\n",
-                                debug_msg.unwrap_or("Could not prettify expression".to_string())
-                            );
                         }
                     }
                     AssertKind::RemainderByZero(_) | AssertKind::DivisionByZero(_) => {
@@ -308,30 +312,23 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> usize {
                                 basic_block,
                                 &tcx.optimized_mir(def_id.to_def_id()),
                             );
-                            eprintln!(
-                                "Found an assertion checking for: {}",
-                                match &**msg {
-                                    AssertKind::RemainderByZero(_) => "Remainder By Zero",
-                                    AssertKind::DivisionByZero(_) => "Division By Zero",
-                                    _ => "Unknown",
-                                }
-                            );
-                            eprintln!("It lives at {:?}", terminator.source_info.span);
-                            if let Ok(snippet) = source_map.span_to_snippet(terminator.source_info.span) {
-                                eprintln!("Source snippet: {}", snippet);
-                            } else {
-                                eprintln!("(could not retrieve source snippet)");
+                            if let Some(assertion_str) = debug_msg.clone() {
+                                let hint = FluxHint {
+                                    span: terminator.source_info.span,
+                                    assertion: assertion_str,
+                                    panic_type: if matches!(**msg, AssertKind::DivisionByZero(_)) {
+                                        hint::FluxPanicType::DivisionByZero
+                                    } else {
+                                        hint::FluxPanicType::RemainderByZero
+                                    },
+                                    function: parse_fn_name(&fn_name).to_string(),
+                                };
+                                panics.push(hint);
                             }
-                            eprintln!(
-                                "The assert expression:\n{}\n",
-                                debug_msg.unwrap_or("Could not prettify expression".to_string())
-                            );
                         }
                     }
                     _ => (),
                 };
-                // Print to stderr
-                panics += 1;
             }
             _ => {}
         }
