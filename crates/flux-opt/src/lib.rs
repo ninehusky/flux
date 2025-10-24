@@ -200,7 +200,7 @@ fn prettify_local_one_block<'tcx>(
                                 }
                             }
                             // TODO(@ninehusky): remove this debug string
-                            Some(format!("{}.copyfor...{:?}", obj, field_idx))
+                            Some(obj)
                         } else {
                             Some(obj)
                         }
