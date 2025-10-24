@@ -16,7 +16,7 @@ use flux_middle::{
     queries::{Providers, QueryResult},
     timings,
 };
-use flux_opt::{self as flux_opt, entry_point, run_mir_analysis_on_all_functions};
+use flux_opt::{self as flux_opt, run_mir_analysis_on_all_functions};
 use flux_refineck as refineck;
 use itertools::Itertools;
 use rustc_borrowck::consumers::ConsumerOptions;
