@@ -140,10 +140,11 @@ fn prettify_local_one_block<'tcx>(
                     };
                     let left = prettify_operand_one_block(tcx, &args.0, block, body);
                     let right = prettify_operand_one_block(tcx, &args.1, block, body);
-                    Some(format!("({:?} {} {})", op_str, left, right))
+                    Some(format!("({} {} {})", op_str, left, right))
                 }
                 // suspicious.
                 Rvalue::UnaryOp(op, arg) => {
+                    eprintln!("unary op {:?} on arg projection: {:?}", op, arg.place().unwrap().projection);
                     let op_str = {
                         match op {
                             UnOp::PtrMetadata => {
@@ -160,10 +161,16 @@ fn prettify_local_one_block<'tcx>(
                         }
                     };
                     let inner = prettify_operand_one_block(tcx, &arg, block, body);
-                    // Some(format!("({} {})", op_str, inner))
-                    Some(inner)
+                    Some(format!("({} {})", op_str, inner))
                 }
-                Rvalue::CopyForDeref(arg) | Rvalue::Ref(_, _, arg) => {
+                Rvalue::CopyForDeref(arg) => {
+                    let obj =
+                        prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
+                    eprintln!("deref arg projection: {:?}", arg.projection);
+                    Some(format!("&{}", obj))
+                }
+                Rvalue::Ref(_, _, arg) => {
+                    eprintln!("ref arg projection: {:?}", arg.projection);
                     let obj =
                         prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
                     if arg
@@ -179,7 +186,18 @@ fn prettify_local_one_block<'tcx>(
                             }
                         });
                         if let Some(field_idx) = field {
-                            Some(format!("{}.{:?}", obj, field_idx))
+                            let base_ty = arg.ty(&body.local_decls, tcx).ty;
+                            // This gives you the type of `self` (the parent/base type)
+                            if let Some(adt_def) = base_ty.ty_adt_def() {
+                                if let Some(field_def) = 
+                                    adt_def.all_fields().nth(field_idx.as_usize())
+                                {
+                                    let field_name = field_def.name.as_str();
+                                    return Some(format!("{}.{}", obj, field_name));
+                                }
+                            }
+                            // TODO(@ninehusky): remove this debug string
+                            Some(format!("{}.copyfor...{:?}", obj, field_idx))
                         } else {
                             Some(obj)
                         }
@@ -190,32 +208,7 @@ fn prettify_local_one_block<'tcx>(
                 Rvalue::RawPtr(_, arg) => {
                     let obj =
                         prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
-                    if arg
-                        .projection
-                        .iter()
-                        .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
-                    {
-                        let field = arg.projection.iter().find_map(|elem| {
-                            if let ProjectionElem::Field(field_idx, _) = elem {
-                                Some(field_idx)
-                            } else {
-                                None
-                            }
-                        });
-                        if let Some(field_idx) = field {
-                            let format_str = match field_idx.index() {
-                                0 => "ring",
-                                1 => "head",
-                                2 => "tail",
-                                _ => "unknown_field",
-                            };
-                            Some(format!("{}.{}", obj, format_str))
-                        } else {
-                            Some(obj)
-                        }
-                    } else {
-                        Some(obj)
-                    }
+                    Some(format!("{}", obj))
                 }
                 Rvalue::Use(arg) => Some(prettify_operand_one_block(tcx, &arg, block, body)),
                 _ => {
