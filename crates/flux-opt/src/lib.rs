@@ -136,7 +136,10 @@ fn prettify_local_one_block<'tcx>(
                         BinOp::Eq => "==",
                         BinOp::Lt => "<",
                         BinOp::Le => "<=",
-                        _ => todo!("I have no idea how to format a {:?}", op),
+                        _ => {
+                            eprintln!("Unsupported binary operation: {:?}", op);
+                            return None;
+                        },
                     };
                     let left = prettify_operand_one_block(tcx, &args.0, block, body);
                     let right = prettify_operand_one_block(tcx, &args.1, block, body);
