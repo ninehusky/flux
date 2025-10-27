@@ -19,19 +19,21 @@ use crate::hint::FluxHint;
 
 mod hint;
 
-pub fn run_mir_analysis_on_all_functions(genv: GlobalEnv) {
+/// Gathers and prints to stderr all panic hints found in the crate.
+/// See [`FluxHint`] for details on the hints collected.
+pub fn gather_crate_panics(genv: GlobalEnv) {
     let tcx = genv.tcx();
     let crate_items = tcx.hir_crate_items(());
-
     let mut panics_per_module: HashMap<String, Vec<FluxHint>> = HashMap::new();
 
-    // Iterate through all items in the crate
+    // 1. Iterate through all items in the crate
     for def_id in crate_items.definitions() {
         let def_path = tcx.def_path_str(def_id);
+        // 2. If the item is a function, analyze it for panics
         match tcx.def_kind(def_id) {
             DefKind::Fn | DefKind::AssocFn => {
                 let module_path = def_path
-                    .rsplit_once("::") // split into (before, after)
+                    .rsplit_once("::") 
                     .map(|(module, _)| module)
                     .unwrap_or("<root>")
                     .to_string();
@@ -72,7 +74,6 @@ fn prettify_operand_one_block<'tcx>(
                 .unwrap_or(format!("_{}", place.local.index()));
             // try to get fields
             let arg = place;
-            eprintln!("Projection chain: {:?}", arg.projection);
 
             if arg.projection.is_empty() || arg.projection.len() < 2 {
                 return obj;
@@ -143,7 +144,7 @@ fn prettify_local_one_block<'tcx>(
                     };
                     let left = prettify_operand_one_block(tcx, &args.0, block, body);
                     let right = prettify_operand_one_block(tcx, &args.1, block, body);
-                    Some(format!("({} {} {})", op_str, left, right))
+                    Some(format!("{} {} {}", left, op_str, right))
                 }
                 // suspicious.
                 Rvalue::UnaryOp(op, arg) => {
