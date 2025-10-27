@@ -38,7 +38,7 @@ pub fn gather_crate_panics(genv: GlobalEnv) {
                     .unwrap_or("<root>")
                     .to_string();
 
-                let hints = entry_point(tcx, def_id);
+                let hints = get_hints_for_func(tcx, def_id);
                 panics_per_module
                     .entry(module_path)
                     .or_default()
@@ -146,7 +146,13 @@ fn prettify_local_one_block<'tcx>(
                     let right = prettify_operand_one_block(tcx, &args.1, block, body);
                     Some(format!("{} {} {}", left, op_str, right))
                 }
-                // suspicious.
+                // NOTE(@ninehusky): This is suspicious.
+                // I chatted with Vivien about this and this seems right?
+                // Basically, there is a difference between a Rvalue::Len and a
+                // UnOp::PtrMetdata called with a slice/array, even though
+                // it seems that both of them do the same thing.
+                // In our current implementation, we _only_ support
+                // UnOp::PtrMetadata for getting lengths of slices/arrays.
                 Rvalue::UnaryOp(op, arg) => {
                     eprintln!("unary op {:?} on arg projection: {:?}", op, arg.place().unwrap().projection);
                     let op_str = {
@@ -158,29 +164,27 @@ fn prettify_local_one_block<'tcx>(
                                 if arg_type.is_array_slice() || arg_type.is_slice() {
                                     "len"
                                 } else {
-                                    "ptr_metadata"
+                                    todo!()
                                 }
                             }
                             _ => todo!(),
                         }
                     };
                     let inner = prettify_operand_one_block(tcx, &arg, block, body);
-                    Some(format!("({} {})", op_str, inner))
+                    Some(format!("{}.{}()", inner, op_str))
                 }
                 Rvalue::CopyForDeref(arg) => {
                     let obj =
                         prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
-                    eprintln!("deref arg projection: {:?}", arg.projection);
                     Some(format!("&{}", obj))
                 }
                 Rvalue::Ref(_, _, arg) => {
-                    eprintln!("ref arg projection: {:?}", arg.projection);
                     let obj =
                         prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body);
                     if arg
                         .projection
                         .iter()
-                        .any(|elem| matches!(elem, ProjectionElem::Field(idx, val)))
+                        .any(|elem| matches!(elem, ProjectionElem::Field(_, _)))
                     {
                         let field = arg.projection.iter().find_map(|elem| {
                             if let ProjectionElem::Field(field_idx, _) = elem {
@@ -200,7 +204,6 @@ fn prettify_local_one_block<'tcx>(
                                     return Some(format!("{}.{}", obj, field_name));
                                 }
                             }
-                            // TODO(@ninehusky): remove this debug string
                             Some(obj)
                         } else {
                             Some(obj)
@@ -216,9 +219,7 @@ fn prettify_local_one_block<'tcx>(
                 }
                 Rvalue::Use(arg) => Some(prettify_operand_one_block(tcx, &arg, block, body)),
                 _ => {
-                    eprintln!("I don't know what to do with a {:?}!", rvalue);
-                    eprintln!("Its enum type is: rvalue::{:?}", std::mem::discriminant(&rvalue));
-                    None
+                    todo!("I don't know what to do with a {:?}!", rvalue);
                 }
             }
         }
@@ -258,7 +259,7 @@ fn debug_name_for_local<'tcx>(body: &Body<'tcx>, local: Local) -> Option<String>
     None
 }
 
-pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> {
+pub fn get_hints_for_func(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> {
     let fn_name = tcx.def_path_str(def_id.to_def_id());
     println!("🔎 Starting analysis of {}", fn_name);
 
@@ -275,11 +276,10 @@ pub fn entry_point(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> {
             continue;
         }
         let terminator = terminator.as_ref().unwrap();
-        let source_map = tcx.sess.source_map();
         match &terminator.kind {
-            TerminatorKind::Assert { cond, expected, msg, target, .. } => {
+            TerminatorKind::Assert { cond, msg, .. } => {
                 match &**msg {
-                    AssertKind::BoundsCheck { len, index } => {
+                    AssertKind::BoundsCheck { .. } => {
                         if let Operand::Copy(place) | Operand::Move(place) = cond {
                             let local = place.local;
                             let debug_msg = prettify_local_one_block(

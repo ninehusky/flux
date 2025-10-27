@@ -16,7 +16,7 @@ use flux_middle::{
     queries::{Providers, QueryResult},
     timings,
 };
-use flux_opt::{self as flux_opt, run_mir_analysis_on_all_functions};
+use flux_opt::{self as flux_opt, gather_crate_panics};
 use flux_refineck as refineck;
 use itertools::Itertools;
 use rustc_borrowck::consumers::ConsumerOptions;
@@ -80,7 +80,7 @@ impl FluxCallbacks {
                 encode_and_save_metadata(genv);
             }
 
-            run_mir_analysis_on_all_functions(genv);
+            gather_crate_panics(genv);
         });
 
         sess.finish_diagnostics();
