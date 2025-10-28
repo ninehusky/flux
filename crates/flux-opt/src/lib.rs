@@ -5,7 +5,6 @@ extern crate rustc_span;
 
 use std::collections::HashMap;
 
-use flux_middle::global_env::GlobalEnv;
 use rustc_hir::{def::DefKind, def_id::LocalDefId};
 use rustc_middle::{
     mir::{
@@ -17,12 +16,11 @@ use rustc_middle::{
 
 use crate::hint::FluxHint;
 
-mod hint;
+pub mod hint;
 
 /// Gathers and prints to stderr all panic hints found in the crate.
 /// See [`FluxHint`] for details on the hints collected.
-pub fn gather_crate_panics(genv: GlobalEnv) {
-    let tcx = genv.tcx();
+pub fn gather_crate_panics(tcx: TyCtxt<'_>) {
     let crate_items = tcx.hir_crate_items(());
     let mut panics_per_module: HashMap<String, Vec<FluxHint>> = HashMap::new();
 

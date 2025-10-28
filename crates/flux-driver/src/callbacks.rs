@@ -80,7 +80,7 @@ impl FluxCallbacks {
                 encode_and_save_metadata(genv);
             }
 
-            gather_crate_panics(genv);
+            gather_crate_panics(tcx);
         });
 
         sess.finish_diagnostics();
