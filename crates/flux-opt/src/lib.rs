@@ -5,7 +5,6 @@ extern crate rustc_span;
 
 use std::collections::HashMap;
 
-use flux_middle::fhir::Ty;
 use rustc_hir::{def::DefKind, def_id::LocalDefId};
 use rustc_middle::{
     mir::{
@@ -83,7 +82,7 @@ fn prettify_operand_one_block<'tcx>(
     }
 }
 
-// TODO(@ninehusky): test this.
+// TODO(@ninehusky): add this as unit test
 fn prettify_projections<'tcx>(
     tcx: TyCtxt<'tcx>,
     base: String,
@@ -95,7 +94,8 @@ fn prettify_projections<'tcx>(
     for (base, proj) in place.iter_projections() {
         match proj {
             ProjectionElem::Deref => {
-                result = format!("*{}", result);
+                // We're not doing anything if they dereference.
+                // result = format!("*{}", result);
             }
             ProjectionElem::Field(field_idx, _) => {
                 let base_ty = base.ty(&body.local_decls, tcx);
@@ -178,19 +178,18 @@ fn prettify_local_one_block<'tcx>(
                     Ok(format!("{}.{}()", inner, op_str))
                 }
                 Rvalue::CopyForDeref(arg) => {
-                    let obj = prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)?;
-                    Ok(format!("&{}", obj))
+                    // We're not doing anything if they copy for deref.
+                    // This would otherwise be something like `&obj`.
+                    prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)
                 }
                 Rvalue::Ref(_, _, arg) => {
                     let base =
                         prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)?;
                     prettify_projections(tcx, base, arg, body)
                 }
-                Rvalue::RawPtr(kind, arg) => {
-                    let ptr_str = kind.ptr_str();
-                    let obj =
-                        prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)?;
-                    Ok(format!("{}{}", ptr_str, obj))
+                Rvalue::RawPtr(_, arg) => {
+                    // We're not doing anything with raw pointers.
+                    prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)
                 }
                 Rvalue::Use(arg) => Ok(prettify_operand_one_block(tcx, &arg, block, body)?),
                 _ => {
