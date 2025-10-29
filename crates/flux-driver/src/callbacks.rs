@@ -16,6 +16,7 @@ use flux_middle::{
     queries::{Providers, QueryResult},
     timings,
 };
+use flux_opt::{self as flux_opt, gather_crate_panics};
 use flux_refineck as refineck;
 use itertools::Itertools;
 use rustc_borrowck::consumers::ConsumerOptions;
@@ -78,8 +79,12 @@ impl FluxCallbacks {
             if result.is_ok() {
                 encode_and_save_metadata(genv);
             }
+
+            gather_crate_panics(tcx).unwrap();
         });
+
         sess.finish_diagnostics();
+
     }
 }
 
