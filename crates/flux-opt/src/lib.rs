@@ -191,10 +191,10 @@ fn prettify_local_one_block<'tcx>(
                     // We're not doing anything with raw pointers.
                     prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)
                 }
-                Rvalue::Use(arg) => Ok(prettify_operand_one_block(tcx, &arg, block, body)?),
-                _ => {
-                    todo!("I don't know what to do with a {:?}!", rvalue);
-                }
+                _ => return Err(format!(
+                    "I don't know what to do with a {:?}!",
+                    rvalue
+                )),
             }
         }
         None => Err(format!("No assignment found for local _{} in the given block", local.index())),
