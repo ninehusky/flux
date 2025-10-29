@@ -9,21 +9,30 @@ extern crate rustc_span;
 extern crate rustc_driver;
 
 use core::panic;
-use std::sync::atomic::AtomicBool;
+use std::{io, sync::atomic::AtomicBool};
 
 use flux_middle::{fhir, global_env::GlobalEnv, queries::Providers, timings, Specs};
-use flux_opt::{gather_crate_panics, hint::FluxHint};
+use flux_opt::{gather_crate_panics, hint::FluxHint, HintsPerModule};
 use rustc_driver::Callbacks;
 use rustc_interface::Config;
+use rustc_middle::query::IntoQueryParam;
 use rustc_session::config::Options;
+use rustc_span::source_map::FileLoader;
+
+const DUMMY_FILE_NAME: &str = "in_memory.rs";
 
 pub struct DummyCallback {
-    pub expected: Vec<FluxHint>,
+    pub source: String,
+    pub expected: HintsPerModule,
+    pub care_about_spans: bool,
 }
 
 impl Callbacks for DummyCallback {
-    fn config(&mut self, _config: &mut rustc_interface::interface::Config) {
-        // we're not gonna do anything.
+    fn config(&mut self, config: &mut rustc_interface::interface::Config) {
+        config.file_loader = Some(Box::new(InMemoryFileLoader {
+            name: DUMMY_FILE_NAME.to_string(),
+            contents: self.source.clone(),
+        }));
     }
 
     fn after_analysis<'tcx>(
@@ -37,10 +46,22 @@ impl Callbacks for DummyCallback {
             let res = gather_crate_panics(tcx);
             match res {
                 Ok(hints) => {
-                    assert_eq!(hints, self.expected);
+                    if self.care_about_spans {
+                        assert_eq!(hints, self.expected);
+                    } else {
+                        assert_eq!(hints.keys().collect::<Vec<_>>(), self.expected.keys().collect::<Vec<_>>());
+                        // This is kind of a "special equals" -- I don't care about spans here.
+                        for (k, v) in hints.iter() {
+                            for (hint1, hint2) in v.iter().zip(self.expected.get(k).unwrap().iter()) {
+                                assert_eq!(hint1.assertion, hint2.assertion);
+                                assert_eq!(hint1.function, hint2.function);
+                                assert_eq!(hint1.panic_type, hint2.panic_type);
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
-                    panic!("Error gathering panics: {:?}", e);
+                    panic!("There was a terrible error gathering panics: {:?}", e);
                 }
             }
             rustc_driver::Compilation::Stop
@@ -48,58 +69,52 @@ impl Callbacks for DummyCallback {
 
 }
 
-// A helper function to run our Flux-Opt algorithm on a source string.
-fn run_mii(src: &'static str) -> GlobalEnv {
-    // 1. Create an Input from the source string.
-    let input = rustc_session::config::Input::Str {
-        name: rustc_span::FileName::anon_source_code(src),
-        input: src.to_string(),
-    };
+struct InMemoryFileLoader {
+    name: String,
+    contents: String,
+}
 
-    // 2. Define a config. I kind of just set everything to
-    // "None" or the equivalent default value.
-    let config = Config {
-        opts: Options::default(),
-        crate_cfg: Default::default(),
-        crate_check_cfg: Default::default(),
-        input,
-        output_dir: None,
-        output_file: None,
-        file_loader: None,
-        lint_caps: Default::default(),
-        register_lints: None,
-        override_queries: None,
-        make_codegen_backend: None,
-        registry: rustc_driver::diagnostics_registry(),
-        ice_file: None,
-        locale_resources: vec![],
-        psess_created: None,
-        hash_untracked_state: None,
-        extra_symbols: vec![],
-        using_internal_features: &AtomicBool::new(false),
-        expanded_args: vec![], 
-    };
+impl FileLoader for InMemoryFileLoader {
+    fn file_exists(&self, path: &std::path::Path) -> bool {
+        path.to_string_lossy() == self.name
+    }
 
-    // 3. Run the compiler with the config.
-
-    let mut result: Vec<FluxHint> = vec![];
-    rustc_driver::run_compiler(config, |compiler| {
-        if compiler.sess.dcx().has_errors().is_some() {
-            panic!("Compilation error!");
+    fn read_file(&self, path: &std::path::Path) -> io::Result<String> {
+        if path.to_string_lossy() == self.name {
+            Ok(self.contents.clone())
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotFound, "no such file"))
         }
+    }
 
-        compiler.enter(|tcx| {
-            // 4. Create a GlobalEnv from the TyCtxt.
-            let genv = GlobalEnv::new(tcx);
+    fn read_binary_file(&self, _path: &std::path::Path) -> io::Result<std::sync::Arc<[u8]>> {
+        unimplemented!("I'm not doing this!");
+    }
+}
 
-            // 5. Run Flux-Opt on the GlobalEnv to get hints.
-            result = flux_opt::hint_generation::generate_hints(&genv);
-        });
-    });
+// A helper function to run our Flux-Opt algorithm on a source string.
+fn run_mii(src: &str, expected: &HintsPerModule) {
+    // 1. Create an Input from the source string.
+    let mut callback = DummyCallback {
+        expected: expected.clone(),
+        source: src.to_string(),
+        care_about_spans: false,
+    };
+
+    // Pretend the compiler is invoked with a single file argument
+    let args = vec![
+        "rustc".to_string(),
+        DUMMY_FILE_NAME.to_string(),
+        "--crate-type=bin".to_string(),
+    ];
+
+    rustc_driver::run_compiler(&args, &mut callback);
 }
 
 pub mod hint_tests {
-    use flux_opt::hint::{FluxHint, FluxPanicType};
+    use flux_opt::{hint::{FluxHint, FluxPanicType}, HintsPerModule, ROOT_ID};
+
+    use crate::run_mii;
 
     #[test]
     fn test_flux_hint_creation() {
@@ -115,13 +130,32 @@ pub mod hint_tests {
     }
 
     #[test]
-    fn get_mir() {
+    fn div_by_zero() {
         let rust_src = r#"
+        #[inline(never)]
         fn divide(a: i32, b: i32) -> i32 {
             a / b
         }
+
+        pub fn main() {
+            let x = 10;
+            let y = 2;
+            let _result = divide(x, y);
+        }
         "#;
 
-        let mir = flux_opt::tests::get_mir_from_source(rust_src, "divide");
+        let mut expected_hints: HintsPerModule = std::collections::HashMap::new();
+        expected_hints.insert(
+            ROOT_ID.to_string(),
+            vec![FluxHint {
+                function: "divide".to_string(),
+                span: rustc_span::DUMMY_SP,
+                assertion: "b == 0".to_string(),
+                panic_type: FluxPanicType::DivisionByZero,
+            }],
+        );
+
+        run_mii(rust_src, &expected_hints);
+
     }
 }

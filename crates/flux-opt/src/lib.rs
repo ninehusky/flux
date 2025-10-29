@@ -20,6 +20,9 @@ pub mod hint;
 
 pub type HintsPerModule = HashMap<String, Vec<FluxHint>>;
 
+pub const ROOT_ID: &str = "<root>";
+
+
 /// Gathers and prints to stderr all panic hints found in the crate.
 /// See [`FluxHint`] for details on the hints collected.
 pub fn gather_crate_panics(tcx: TyCtxt<'_>) -> Result<HintsPerModule, String> {
@@ -35,7 +38,7 @@ pub fn gather_crate_panics(tcx: TyCtxt<'_>) -> Result<HintsPerModule, String> {
                 let module_path = def_path
                     .rsplit_once("::")
                     .map(|(module, _)| module)
-                    .unwrap_or("<root>")
+                    .unwrap_or(ROOT_ID)
                     .to_string();
 
                 let hints = get_hints_for_func(tcx, def_id);
