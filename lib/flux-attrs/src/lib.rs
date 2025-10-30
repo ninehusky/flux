@@ -119,6 +119,11 @@ pub fn reft(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
     attr_impl::reft(attrs, tokens)
 }
 
+#[proc_macro_attribute]
+pub fn no_panic(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
+    attr_impl::no_panic(attrs, tokens)
+}
+
 #[cfg(flux_sysroot)]
 mod attr_sysroot {
     use super::*;
@@ -214,5 +219,6 @@ mod attr_dummy {
         ignore,
         should_fail,
         reft,
+        no_panic,
     );
 }
