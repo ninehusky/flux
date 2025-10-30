@@ -259,21 +259,6 @@ pub fn get_hints_for_func(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> 
         let terminator = terminator.as_ref().unwrap();
         match &terminator.kind {
             TerminatorKind::Call { func, .. } => {
-                fn is_panic_or_abort_fn(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
-                    let lang_items = tcx.lang_items();
-
-                    [
-                        lang_items.panic_fn(),
-                        lang_items.panic_fmt(),
-                        lang_items.begin_panic_fn(),
-                        lang_items.panic_display(),
-                        lang_items.panic_cannot_unwind(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .any(|lid| lid == def_id)
-                }
-
                 if let Some((def_id, _)) = func.const_fn_def() {
                     let called_path = tcx.def_path_str(def_id);
                     // We handle aborts by path because they're not in lang items.
