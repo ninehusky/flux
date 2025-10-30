@@ -170,6 +170,7 @@ mod attr_sysroot {
         ignore,
         should_fail,
         reft,
+        no_panic,
     );
 }
 
