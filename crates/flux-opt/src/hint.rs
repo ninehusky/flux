@@ -5,6 +5,7 @@ pub enum FluxPanicType {
     BoundsCheck,
     DivisionByZero,
     RemainderByZero,
+    ExplicitPanic,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

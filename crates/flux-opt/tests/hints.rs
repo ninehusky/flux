@@ -220,23 +220,36 @@ pub mod hint_tests {
             2
         }
 
+        fn do_the_abort() {
+            std::process::abort();
+        }
+
         pub fn main() {
             let a: [i32; 3] = [1, 2, 3];
             let _result = do_something_cool(1, &a);
+            let _result2 = do_the_abort();
         }
         "#;
 
         let mut expected_hints: HintsPerModule = std::collections::HashMap::new();
         expected_hints.insert(
             ROOT_ID.to_string(),
-            vec![FluxHint {
-                function: "do_something_cool".to_string(),
-                span: rustc_span::DUMMY_SP,
-                assertion: "i < arr.len()".to_string(),
-                panic_type: FluxPanicType::BoundsCheck,
-            }],
+            vec![
+                FluxHint {
+                    function: "do_something_cool".to_string(),
+                    span: rustc_span::DUMMY_SP,
+                    assertion: "Explicit Panic".to_string(),
+                    panic_type: FluxPanicType::ExplicitPanic,
+                },
+                FluxHint {
+                    function: "do_the_abort".to_string(),
+                    span: rustc_span::DUMMY_SP,
+                    assertion: "Explicit Panic".to_string(),
+                    panic_type: FluxPanicType::ExplicitPanic,
+                },
+            ],
         );
-        run_mii(rust_src, &expected_hints);
 
+        run_mii(rust_src, &expected_hints);
     }
 }
