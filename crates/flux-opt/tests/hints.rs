@@ -50,6 +50,7 @@ impl Callbacks for DummyCallback {
                     );
                     // This is kind of a "special equals" -- I don't care about spans here.
                     for (k, v) in hints.iter() {
+                        assert_eq!(v.len(), self.expected.get(k).unwrap().len());
                         for (hint1, hint2) in v.iter().zip(self.expected.get(k).unwrap().iter()) {
                             assert_eq!(hint1.assertion, hint2.assertion);
                             assert_eq!(hint1.function, hint2.function);
@@ -207,6 +208,48 @@ pub mod hint_tests {
                 panic_type: FluxPanicType::BoundsCheck,
             }],
         );
+        run_mii(rust_src, &expected_hints);
+    }
+
+    #[test]
+    fn do_the_panic() {
+        let rust_src = r#"
+        #[inline(never)]
+        fn do_something_cool(i: usize, arr: &[i32]) -> i32 {
+            panic!("Oh no!! An explicit panic!");
+            2
+        }
+
+        fn do_the_abort() {
+            std::process::abort();
+        }
+
+        pub fn main() {
+            let a: [i32; 3] = [1, 2, 3];
+            let _result = do_something_cool(1, &a);
+            let _result2 = do_the_abort();
+        }
+        "#;
+
+        let mut expected_hints: HintsPerModule = std::collections::HashMap::new();
+        expected_hints.insert(
+            ROOT_ID.to_string(),
+            vec![
+                FluxHint {
+                    function: "do_something_cool".to_string(),
+                    span: rustc_span::DUMMY_SP,
+                    assertion: "Explicit Panic".to_string(),
+                    panic_type: FluxPanicType::ExplicitPanic,
+                },
+                FluxHint {
+                    function: "do_the_abort".to_string(),
+                    span: rustc_span::DUMMY_SP,
+                    assertion: "Explicit Panic".to_string(),
+                    panic_type: FluxPanicType::ExplicitPanic,
+                },
+            ],
+        );
+
         run_mii(rust_src, &expected_hints);
     }
 }

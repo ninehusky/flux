@@ -5,7 +5,10 @@ extern crate rustc_span;
 
 use std::collections::HashMap;
 
-use rustc_hir::{def::DefKind, def_id::LocalDefId};
+use rustc_hir::{
+    def::DefKind,
+    def_id::{DefId, LocalDefId},
+};
 use rustc_middle::{
     mir::{
         AssertKind, BasicBlockData, BinOp, Body, Local, Operand, Place, ProjectionElem, Rvalue,
@@ -14,14 +17,13 @@ use rustc_middle::{
     ty::TyCtxt,
 };
 
-use crate::hint::FluxHint;
+use crate::hint::{FluxHint, FluxPanicType};
 
 pub mod hint;
 
 pub type HintsPerModule = HashMap<String, Vec<FluxHint>>;
 
 pub const ROOT_ID: &str = "<root>";
-
 
 /// Gathers and prints to stderr all panic hints found in the crate.
 /// See [`FluxHint`] for details on the hints collected.
@@ -135,7 +137,8 @@ fn prettify_local_one_block<'tcx>(
         return Ok(name);
     }
 
-    let og_assignment: Option<(&'tcx Place<'tcx>, &'tcx Rvalue<'tcx>)> = find_assignment(block, local);
+    let og_assignment: Option<(&'tcx Place<'tcx>, &'tcx Rvalue<'tcx>)> =
+        find_assignment(block, local);
     match og_assignment {
         Some((_, rvalue)) => {
             match rvalue {
@@ -194,10 +197,11 @@ fn prettify_local_one_block<'tcx>(
                     // We're not doing anything with raw pointers.
                     prettify_operand_one_block(tcx, &Operand::Copy(arg.clone()), block, body)
                 }
-                _ => return Err(format!(
-                    "I don't know what to do with a {:?}!",
-                    rvalue
-                )),
+                Rvalue::Use(arg) => {
+                    // ignore this.
+                    prettify_operand_one_block(tcx, arg, block, body)
+                }
+                _ => return Err(format!("I don't know what to do with a {:?}!", rvalue)),
             }
         }
         None => Err(format!("No assignment found for local _{} in the given block", local.index())),
@@ -254,6 +258,24 @@ pub fn get_hints_for_func(tcx: TyCtxt<'_>, def_id: LocalDefId) -> Vec<FluxHint> 
         }
         let terminator = terminator.as_ref().unwrap();
         match &terminator.kind {
+            TerminatorKind::Call { func, .. } => {
+                if let Some((def_id, _)) = func.const_fn_def() {
+                    let called_path = tcx.def_path_str(def_id);
+                    // We handle aborts by path because they're not in lang items.
+                    if is_panic_or_abort_fn(tcx, def_id)
+                        || called_path == "core::intrinsics::abort"
+                        || called_path == "std::process::abort"
+                    {
+                        let panic_type = FluxPanicType::ExplicitPanic;
+                        panics.push(FluxHint {
+                            function: fn_name.clone(),
+                            span: terminator.source_info.span,
+                            assertion: "Explicit Panic".into(),
+                            panic_type,
+                        });
+                    }
+                }
+            }
             TerminatorKind::Assert { cond, msg, .. } => {
                 match &**msg {
                     AssertKind::BoundsCheck { .. }
