@@ -26,6 +26,10 @@ pub const FLUX_ATTRS: &[&str] = &[
     "reft",
 ];
 
+pub fn no_panic(attr: TokenStream, item: TokenStream) -> TokenStream {
+    panic!("the `no_panic` attribute is only available in the flux sysroot");
+}
+
 pub fn extern_spec(attr: TokenStream, tokens: TokenStream) -> TokenStream {
     extern_spec::transform_extern_spec(attr, tokens).unwrap_or_else(|err| err.to_compile_error())
 }

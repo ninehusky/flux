@@ -553,6 +553,7 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
             ("trusted_impl", hir::AttrArgs::Empty) => FluxAttrKind::TrustedImpl(Trusted::Yes),
             ("opaque", hir::AttrArgs::Empty) => FluxAttrKind::Opaque,
             ("reflect", hir::AttrArgs::Empty) => FluxAttrKind::Reflect,
+            ("no_panic", hir::AttrArgs::Empty) => FluxAttrKind::NoPanic,
             ("extern_spec", hir::AttrArgs::Empty) => FluxAttrKind::ExternSpec,
             ("should_fail", hir::AttrArgs::Empty) => FluxAttrKind::ShouldFail,
             ("specs", hir::AttrArgs::Delimited(dargs)) => {
@@ -664,6 +665,7 @@ enum FluxAttrKind {
     Ignore(surface::Ignored),
     ShouldFail,
     ExternSpec,
+    NoPanic,
     /// See `detachXX.rs`
     DetachedSpecs(surface::DetachedSpecs),
 }
@@ -799,6 +801,8 @@ impl FluxAttrs {
                 FluxAttrKind::InferOpts(opts) => surface::Attr::InferOpts(opts),
                 FluxAttrKind::Ignore(ignored) => surface::Attr::Ignore(ignored),
                 FluxAttrKind::ShouldFail => surface::Attr::ShouldFail,
+                // TODO(@ninehusky): is this correct?
+                FluxAttrKind::NoPanic => surface::Attr::NoPanic,
                 FluxAttrKind::Opaque
                 | FluxAttrKind::Reflect
                 | FluxAttrKind::FnSig(_)
@@ -847,6 +851,7 @@ impl FluxAttrKind {
             FluxAttrKind::ShouldFail => attr_name!(ShouldFail),
             FluxAttrKind::ExternSpec => attr_name!(ExternSpec),
             FluxAttrKind::DetachedSpecs(_) => attr_name!(DetachedSpecs),
+            FluxAttrKind::NoPanic => attr_name!(NoPanic),
         }
     }
 }

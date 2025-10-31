@@ -49,6 +49,7 @@ pub enum Attr {
     ProvenExternally,
     ShouldFail,
     InferOpts(PartialInferOpts),
+    NoPanic,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -59,6 +60,10 @@ pub struct AttrMap<'fhir> {
 }
 
 impl AttrMap<'_> {
+    pub(crate) fn no_panic(&self) -> bool {
+        self.attrs.iter().any(|attr| matches!(attr, Attr::NoPanic))
+    }
+
     pub(crate) fn proven_externally(&self) -> bool {
         self.attrs
             .iter()
