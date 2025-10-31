@@ -664,6 +664,7 @@ enum FluxAttrKind {
     Ignore(surface::Ignored),
     ShouldFail,
     ExternSpec,
+    NoPanic,
     /// See `detachXX.rs`
     DetachedSpecs(surface::DetachedSpecs),
 }
@@ -799,6 +800,8 @@ impl FluxAttrs {
                 FluxAttrKind::InferOpts(opts) => surface::Attr::InferOpts(opts),
                 FluxAttrKind::Ignore(ignored) => surface::Attr::Ignore(ignored),
                 FluxAttrKind::ShouldFail => surface::Attr::ShouldFail,
+                // TODO(@ninehusky): is this correct?
+                FluxAttrKind::NoPanic => surface::Attr::NoPanic,
                 FluxAttrKind::Opaque
                 | FluxAttrKind::Reflect
                 | FluxAttrKind::FnSig(_)
@@ -847,6 +850,7 @@ impl FluxAttrKind {
             FluxAttrKind::ShouldFail => attr_name!(ShouldFail),
             FluxAttrKind::ExternSpec => attr_name!(ExternSpec),
             FluxAttrKind::DetachedSpecs(_) => attr_name!(DetachedSpecs),
+            FluxAttrKind::NoPanic => attr_name!(NoPanic),
         }
     }
 }

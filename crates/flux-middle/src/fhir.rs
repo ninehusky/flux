@@ -49,6 +49,7 @@ pub enum Attr {
     ProvenExternally,
     ShouldFail,
     InferOpts(PartialInferOpts),
+    NoPanic,
 }
 
 #[derive(Clone, Copy, Default)]
