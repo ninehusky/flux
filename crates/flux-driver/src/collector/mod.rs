@@ -553,6 +553,7 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
             ("trusted_impl", hir::AttrArgs::Empty) => FluxAttrKind::TrustedImpl(Trusted::Yes),
             ("opaque", hir::AttrArgs::Empty) => FluxAttrKind::Opaque,
             ("reflect", hir::AttrArgs::Empty) => FluxAttrKind::Reflect,
+            ("no_panic", hir::AttrArgs::Empty) => FluxAttrKind::NoPanic,
             ("extern_spec", hir::AttrArgs::Empty) => FluxAttrKind::ExternSpec,
             ("should_fail", hir::AttrArgs::Empty) => FluxAttrKind::ShouldFail,
             ("specs", hir::AttrArgs::Delimited(dargs)) => {
