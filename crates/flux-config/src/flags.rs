@@ -62,6 +62,9 @@ pub struct Flags {
     /// If `true`, all code will be ignored by default. You can selectively unignore items by marking them with `#[ignore(no)]`. The default value of this flag is `false`, i.e., all code is unignored by default.
     pub ignore_default: bool,
     pub emit_lean_defs: bool,
+    /// If `true`, all code is expected never to panic by default. You can selectively conditionally items by marking them with `#[no_panic(off)]`.
+    /// The default value of this flag is `false`, i.e., all code is allowed to panic by default.
+    pub no_panic_default: bool,
 }
 
 impl Default for Flags {
@@ -89,6 +92,7 @@ impl Default for Flags {
             trusted_default: false,
             ignore_default: false,
             emit_lean_defs: false,
+            no_panic_default: false,
         }
     }
 }
@@ -122,6 +126,7 @@ pub(crate) static FLAGS: LazyLock<Flags> = LazyLock::new(|| {
             "trusted" => parse_bool(&mut flags.trusted_default, value),
             "ignore" => parse_bool(&mut flags.ignore_default, value),
             "emit_lean_defs" => parse_bool(&mut flags.emit_lean_defs, value),
+            "no-panic" => parse_bool(&mut flags.no_panic_default, value),
             _ => {
                 eprintln!("error: unknown flux option: `{key}`");
                 process::exit(EXIT_FAILURE);

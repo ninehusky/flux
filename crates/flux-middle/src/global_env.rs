@@ -545,7 +545,7 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
 
     /// Whether the function is marked with `#[flux::no_panic]`
     pub fn no_panic(self, def_id: LocalDefId) -> bool {
-        self.fhir_attr_map(def_id).no_panic()
+        self.fhir_attr_map(def_id).no_panic() || config::no_panic_default()
     }
 
     /// Traverse the parent chain of `def_id` until the first node for which `f` returns [`Some`].
