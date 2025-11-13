@@ -76,7 +76,30 @@ pub fn provide(providers: &mut Providers) {
 }
 
 fn no_panic(genv: GlobalEnv, def_id: MaybeExternId) -> QueryResult<bool> {
-    genv.no_panic(def_id.local_id())
+    // fn no_panic(genv: GlobalEnv, def_id: MaybeExternId) -> bool {
+    // let attrs = genv.fhir_attr_map();
+    // if ...attrs has no panic... {
+    //     return true;
+    // }
+    // let Some(local_id) = def_id.as_local() else {
+    //     return false;
+    // }
+    // if let Some(parent) = genv.tcx().opt_local_parent(local_id) {
+    //     genv.no_panic(parent)
+    // } else {
+    //     false
+    // }
+    let attrs_has_no_panic = genv.fhir_attr_map(def_id.local_id()).no_panic();
+    if attrs_has_no_panic {
+        return Ok(true);
+    }
+
+    if let Some(local_id) = def_id.as_local() {
+        if let Some(parent) = genv.tcx().opt_local_parent(local_id) {
+            return genv.no_panic(MaybeExternId::Local(parent));
+        }
+    }
+    Ok(false)
 }
 
 fn sort_decl_param_count(genv: GlobalEnv, def_id: FluxId<MaybeExternId>) -> usize {

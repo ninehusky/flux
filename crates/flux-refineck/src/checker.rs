@@ -788,13 +788,14 @@ impl<'ck, 'genv, 'tcx, M: Mode> Checker<'ck, 'genv, 'tcx, M> {
         let genv = self.genv;
         let tcx = genv.tcx();
 
-        let no_panic = genv.no_panic(self.def_id.to_def_id());
+        let no_panic = genv.no_panic(self.def_id.to_def_id()).unwrap_or(false) || config::no_panic();
 
-        if no_panic.unwrap_or(false)
+        if no_panic
             && let Some(callee_def_id) = callee_def_id
             && genv.def_kind(callee_def_id).is_fn_like()
         {
             let callee_no_panic = genv.no_panic(callee_def_id).unwrap_or(false);
+
             if "refine" == M::NAME && !callee_no_panic {
                 genv.sess().emit_err(errors::PanicError { span });
             }
