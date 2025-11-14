@@ -114,7 +114,7 @@ struct Holes {
 
 impl TypeFolder for &Holes {
     fn fold_sort(&mut self, sort: &rty::Sort) -> rty::Sort {
-        if let rty::Sort::Infer(rty::SortInfer::SortVar(vid)) = sort {
+        if let rty::Sort::Infer(vid) = sort {
             self.sorts
                 .get(vid)
                 .cloned()
@@ -393,7 +393,7 @@ impl<'genv, 'tcx> Zipper<'genv, 'tcx> {
     }
 
     fn zip_sorts(&mut self, a: &rty::Sort, b: &rty::Sort) {
-        if let rty::Sort::Infer(rty::SortInfer::SortVar(vid)) = a {
+        if let rty::Sort::Infer(vid) = a {
             assert_ne!(vid.as_u32(), 0);
             self.holes.sorts.insert(*vid, b.clone());
         }
@@ -536,14 +536,12 @@ impl<'genv, 'tcx> Zipper<'genv, 'tcx> {
         }
 
         impl TypeFolder for Adjuster<'_, '_, '_> {
-            fn fold_binder<T>(&mut self, t: &rty::Binder<T>) -> rty::Binder<T>
-            where
-                T: TypeFoldable,
-            {
+            fn enter_binder(&mut self, _: &rty::BoundVariableKinds) {
                 self.current_index.shift_in(1);
-                let r = t.super_fold_with(self);
+            }
+
+            fn exit_binder(&mut self) {
                 self.current_index.shift_out(1);
-                r
             }
 
             fn fold_region(&mut self, re: &rty::Region) -> rty::Region {

@@ -176,6 +176,9 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                     opaque_fun_defs
                         .push(ecx.fun_decl_to_fixpoint(spec_func.def_id.to_def_id(), &mut scx));
                 }
+                FluxItem::SortDecl(sort_decl) => {
+                    scx.declare_opaque_sort(sort_decl.def_id.to_def_id());
+                }
                 _ => {}
             }
         }
@@ -284,14 +287,29 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
         }
 
         let kind = self.genv.def_kind(def_id);
-        metrics::incr_metric_if(kind.is_fn_like(), Metric::FnTotal);
+
+        // For the purpose of metrics, we consider to be a *function* an item that
+        // 1. It's local, i.e., it's not an extern spec.
+        // 2. It's a free function (`DefKind::Fn`) or associated item (`DefKind::AssocFn`), and
+        // 3. It has a mir body
+        // In particular, this excludes closures (because they dont have the right `DefKind`) and
+        // trait methods without a default body.
+        let is_fn_with_body = def_id
+            .as_local()
+            .map(|local_id| {
+                matches!(kind, DefKind::Fn | DefKind::AssocFn)
+                    && self.genv.tcx().is_mir_available(local_id)
+            })
+            .unwrap_or(false);
+
+        metrics::incr_metric_if(is_fn_with_body, Metric::FnTotal);
 
         if self.genv.ignored(def_id.local_id()) {
-            metrics::incr_metric_if(kind.is_fn_like(), Metric::FnIgnored);
+            metrics::incr_metric_if(is_fn_with_body, Metric::FnIgnored);
             return Ok(());
         }
         if !self.is_included(def_id) {
-            metrics::incr_metric_if(kind.is_fn_like(), Metric::FnTrusted);
+            metrics::incr_metric_if(is_fn_with_body, Metric::FnTrusted);
             return Ok(());
         }
 
@@ -300,7 +318,10 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                 // Make sure we run conversion and report errors even if we skip the function
                 force_conv(self.genv, def_id.resolved_id()).emit(&self.genv)?;
                 let Some(local_id) = def_id.as_local() else { return Ok(()) };
-                refineck::check_fn(self.genv, &mut self.cache, local_id)
+                if is_fn_with_body {
+                    refineck::check_fn(self.genv, &mut self.cache, local_id)?;
+                }
+                Ok(())
             }
             DefKind::Enum => {
                 self.genv.check_wf(def_id.local_id()).emit(&self.genv)?;

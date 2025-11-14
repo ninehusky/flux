@@ -119,6 +119,10 @@ pub fn name_of_thy_func(func: liquid_fixpoint::ThyFunc) -> Option<&'static str> 
     let name = match func {
         ThyFunc::BvZeroExtend(_) | ThyFunc::BvSignExtend(_) => return None,
         ThyFunc::StrLen => "str_len",
+        ThyFunc::StrConcat => "str_concat",
+        ThyFunc::StrPrefixOf => "str_prefix_of",
+        ThyFunc::StrSuffixOf => "str_suffix_of",
+        ThyFunc::StrContains => "str_contains",
         ThyFunc::IntToBv8 => "bv_int_to_bv8",
         ThyFunc::Bv8ToInt => "bv_bv8_to_int",
         ThyFunc::IntToBv32 => "bv_int_to_bv32",
@@ -178,6 +182,20 @@ fn sort_of_thy_func(func: liquid_fixpoint::ThyFunc) -> Option<rty::PolyFuncSort>
         ThyFunc::StrLen => {
             // str -> int
             rty::PolyFuncSort::new(List::empty(), rty::FuncSort::new(vec![rty::Sort::Str], Int))
+        }
+        ThyFunc::StrConcat => {
+            // (str, str) -> str
+            rty::PolyFuncSort::new(
+                List::empty(),
+                rty::FuncSort::new(vec![rty::Sort::Str, rty::Sort::Str], rty::Sort::Str),
+            )
+        }
+        ThyFunc::StrPrefixOf | ThyFunc::StrSuffixOf | ThyFunc::StrContains => {
+            // (str, str) -> bool
+            rty::PolyFuncSort::new(
+                List::empty(),
+                rty::FuncSort::new(vec![rty::Sort::Str, rty::Sort::Str], Bool),
+            )
         }
         ThyFunc::IntToBv8 => {
             // int -> BitVec<8>
@@ -554,7 +572,7 @@ impl PlaceTy {
 /// The different reasons we issue fixpoint queries. This is used to dissambiguate queries that
 /// are issued for the same item.
 ///
-/// NOTE: This is defined here because it's also used in [`timings`]
+/// NOTE: This is defined here because it's also used in [`metrics`]
 #[derive(Debug, Hash, Clone, Copy)]
 pub enum FixpointQueryKind {
     /// Query issued when checking an impl method is a subtype of the trait
@@ -577,5 +595,13 @@ impl FixpointQueryKind {
     /// A string that uniquely identifies a query given an item `DefId`
     pub fn task_key(self, tcx: TyCtxt, def_id: DefId) -> String {
         format!("{}###{:?}", tcx.def_path_str(def_id), self)
+    }
+
+    /// Returns `true` if the fixpoint query kind is [`Body`].
+    ///
+    /// [`Body`]: FixpointQueryKind::Body
+    #[must_use]
+    pub fn is_body(&self) -> bool {
+        matches!(self, Self::Body)
     }
 }

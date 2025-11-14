@@ -9,7 +9,8 @@ use flux_errors::{E0999, ErrorGuaranteed};
 use flux_rustc_bridge::{
     self, def_id_to_string,
     lowering::{self, Lower, UnsupportedErr},
-    mir, ty,
+    mir::{self},
+    ty,
 };
 use itertools::Itertools;
 use rustc_data_structures::unord::{ExtendUnord, UnordMap};
@@ -237,7 +238,7 @@ impl Default for Providers {
 
 pub struct Queries<'genv, 'tcx> {
     pub(crate) providers: Providers,
-    mir: Cache<LocalDefId, QueryResult<Rc<mir::Body<'tcx>>>>,
+    mir: Cache<LocalDefId, QueryResult<Rc<mir::BodyRoot<'tcx>>>>,
     collect_specs: OnceCell<crate::Specs>,
     resolve_crate: OnceCell<crate::ResolverOutput>,
     desugar: Cache<LocalDefId, QueryResult<fhir::Node<'genv>>>,
@@ -270,7 +271,7 @@ pub struct Queries<'genv, 'tcx> {
     fn_sig: Cache<DefId, QueryResult<rty::EarlyBinder<rty::PolyFnSig>>>,
     lower_late_bound_vars: Cache<LocalDefId, QueryResult<List<ty::BoundVariableKind>>>,
     sort_decl_param_count: Cache<FluxDefId, usize>,
-    no_panic: Cache<DefId, QueryResult<bool>>,
+    no_panic: Cache<DefId, bool>,
 }
 
 impl<'genv, 'tcx> Queries<'genv, 'tcx> {
@@ -317,7 +318,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         &self,
         genv: GlobalEnv<'genv, 'tcx>,
         def_id: LocalDefId,
-    ) -> QueryResult<Rc<mir::Body<'tcx>>> {
+    ) -> QueryResult<Rc<mir::BodyRoot<'tcx>>> {
         run_with_cache(&self.mir, def_id, || {
             let mir = unsafe { flux_common::mir_storage::retrieve_mir_body(genv.tcx(), def_id) };
             let mir =
@@ -586,23 +587,19 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         })
     }
 
-    pub(crate) fn no_panic(&self, genv: GlobalEnv, def_id: DefId) -> QueryResult<bool> {
+    pub(crate) fn no_panic(&self, genv: GlobalEnv, def_id: DefId) -> bool {
         run_with_cache(&self.no_panic, def_id, || {
             def_id.dispatch_query(
                 genv,
                 |def_id| {
-                    (self.providers.no_panic)(genv, def_id)
-                    // match def_id {
-                    //     MaybeExternId::Local(def_id) => Ok(genv.fhir_attr_map(def_id).no_panic()),
-                    //     MaybeExternId::Extern(def_id, _) => {
-                    //         Ok(genv.fhir_attr_map(def_id).no_panic())
-                    //     },
-                    // }
+                    let local_id = match def_id {
+                        MaybeExternId::Local(def_id) => def_id,
+                        MaybeExternId::Extern(def_id, _) => def_id,
+                    };
+                    genv.fhir_attr_map(local_id).no_panic()
                 },
                 |def_id| genv.cstore().no_panic(def_id),
-                |def_id| {
-                    genv.cstore().no_panic(def_id).unwrap_or(Ok(false))
-                },
+                |_| false,
             )
         })
     }

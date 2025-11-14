@@ -50,6 +50,7 @@ pub enum Attr {
     ShouldFail,
     InferOpts(PartialInferOpts),
     NoPanic,
+    NoPanic,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1035,6 +1036,7 @@ pub enum ExprKind<'fhir> {
     Abs(&'fhir [RefineParam<'fhir>], &'fhir Expr<'fhir>),
     BoundedQuant(QuantKind, RefineParam<'fhir>, Range, &'fhir Expr<'fhir>),
     Record(&'fhir [Expr<'fhir>]),
+    SetLiteral(&'fhir [Expr<'fhir>]),
     Constructor(Option<PathExpr<'fhir>>, &'fhir [FieldExpr<'fhir>], Option<&'fhir Spread<'fhir>>),
     Block(&'fhir [LetDecl<'fhir>], &'fhir Expr<'fhir>),
     Err(ErrorGuaranteed),
@@ -1569,6 +1571,9 @@ impl fmt::Debug for Expr<'_> {
             }
             ExprKind::Record(flds) => {
                 write!(f, "{{ {:?} }}", flds.iter().format(", "))
+            }
+            ExprKind::SetLiteral(elems) => {
+                write!(f, "#{{ {:?} }}", elems.iter().format(", "))
             }
             ExprKind::Constructor(path, exprs, spread) => {
                 if let Some(path) = path
