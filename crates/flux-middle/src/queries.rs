@@ -193,6 +193,7 @@ pub struct Providers {
     pub item_bounds:
         fn(GlobalEnv, MaybeExternId) -> QueryResult<rty::EarlyBinder<List<rty::Clause>>>,
     pub sort_decl_param_count: fn(GlobalEnv, FluxId<MaybeExternId>) -> usize,
+    pub no_panic: fn(GlobalEnv, MaybeExternId) -> QueryResult<bool>,
 }
 
 macro_rules! empty_query {
@@ -230,6 +231,7 @@ impl Default for Providers {
             item_bounds: |_, _| empty_query!(),
             constant_info: |_, _| empty_query!(),
             sort_decl_param_count: |_, _| empty_query!(),
+            no_panic: |_, _| empty_query!(),
         }
     }
 }

@@ -58,6 +58,10 @@ pub fn ignore_default() -> bool {
     FLAGS.ignore_default
 }
 
+pub fn no_panic() -> bool {
+    FLAGS.no_panic
+}
+
 pub fn emit_lean_defs() -> bool {
     FLAGS.emit_lean_defs
 }

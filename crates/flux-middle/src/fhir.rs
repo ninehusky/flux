@@ -50,6 +50,7 @@ pub enum Attr {
     ShouldFail,
     InferOpts(PartialInferOpts),
     NoPanic,
+    NoPanic,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -96,7 +97,7 @@ impl AttrMap<'_> {
             .find_map(|attr| if let Attr::InferOpts(opts) = *attr { Some(opts) } else { None })
     }
 
-    pub(crate) fn no_panic(&self) -> bool {
+    pub fn no_panic(&self) -> bool {
         self.attrs.iter().any(|attr| matches!(attr, Attr::NoPanic))
     }
 }

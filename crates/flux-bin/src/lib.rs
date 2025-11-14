@@ -29,6 +29,8 @@ pub struct FluxMetadata {
     /// If present, only check files that match any of the glob patterns. Patterns are checked
     /// relative to the location of the manifest file.
     pub include: Option<Vec<String>>,
+    /// Set no_panic to true
+    pub no_panic: Option<bool>,
 }
 
 impl FluxMetadata {
@@ -48,6 +50,9 @@ impl FluxMetadata {
         }
         if let Some(v) = self.smt_define_fun {
             flags.push(format!("-Fsmt-define-fun={v}"));
+        }
+        if let Some(v) = self.no_panic {
+            flags.push(format!("-Fno_panic={v}"));
         }
         if let Some(v) = self.default_trusted {
             flags.push(format!("-Ftrusted={v}"));
