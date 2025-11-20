@@ -1,5 +1,5 @@
 trait MyTrait {
-    #[flux_rs::no_panic]
+    #[flux::no_panic]
     fn f1(&self) -> usize;
 }
 
@@ -7,7 +7,7 @@ trait MyTrait {
 struct MyStruct {}
 
 impl MyTrait for MyStruct {
-    fn f1(&self) -> usize { // ~ ERROR may panic
+    fn f1(&self) -> usize { //~ ERROR may panic
         1
     }
 }
