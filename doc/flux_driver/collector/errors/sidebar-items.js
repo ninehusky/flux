@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["AttrMapErr","AttrOnOpaque","DuplicatedAttr","InvalidAttr","MismatchedSpecName","MissingVariant","MultipleSpecifications","ReflectedEnumWithRefinedBy","SyntaxErr","UnresolvedSpecification"]};
