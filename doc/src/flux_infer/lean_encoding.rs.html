@@ -261,95 +261,95 @@
 <a href=#261 id=261 data-nosnippet>261</a>        path.set_extension(<span class="string">"lean"</span>);
 <a href=#262 id=262 data-nosnippet>262</a>        path
 <a href=#263 id=263 data-nosnippet>263</a>    }
-<a href=#264 id=264 data-nosnippet>264</a>}
-<a href=#265 id=265 data-nosnippet>265</a>
-<a href=#266 id=266 data-nosnippet>266</a><span class="kw">pub struct </span>LeanEncoder&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#267 id=267 data-nosnippet>267</a>    genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
-<a href=#268 id=268 data-nosnippet>268</a>    def_id: MaybeExternId,
-<a href=#269 id=269 data-nosnippet>269</a>    pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
-<a href=#270 id=270 data-nosnippet>270</a>    sort_deps: SortDeps,
-<a href=#271 id=271 data-nosnippet>271</a>    fun_deps: Vec&lt;fixpoint::FunDef&gt;,
-<a href=#272 id=272 data-nosnippet>272</a>    constants: ConstDeps,
-<a href=#273 id=273 data-nosnippet>273</a>    kvar_solutions: KVarSolutions,
-<a href=#274 id=274 data-nosnippet>274</a>    kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
-<a href=#275 id=275 data-nosnippet>275</a>    constraint: fixpoint::Constraint,
-<a href=#276 id=276 data-nosnippet>276</a>    sort_files: FxHashMap&lt;fixpoint::DataSort, LeanFile&gt;,
-<a href=#277 id=277 data-nosnippet>277</a>    fun_files: FxHashMap&lt;FluxDefId, LeanFile&gt;,
-<a href=#278 id=278 data-nosnippet>278</a>    const_files: FxHashMap&lt;fixpoint::Var, LeanFile&gt;,
-<a href=#279 id=279 data-nosnippet>279</a>}
-<a href=#280 id=280 data-nosnippet>280</a>
-<a href=#281 id=281 data-nosnippet>281</a><span class="kw">impl</span>&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; LeanEncoder&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#282 id=282 data-nosnippet>282</a>    <span class="kw">fn </span>lean_cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; LeanCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#283 id=283 data-nosnippet>283</a>        LeanCtxt {
-<a href=#284 id=284 data-nosnippet>284</a>            genv: <span class="self">self</span>.genv,
-<a href=#285 id=285 data-nosnippet>285</a>            pretty_var_map: <span class="kw-2">&amp;</span><span class="self">self</span>.pretty_var_map,
-<a href=#286 id=286 data-nosnippet>286</a>            adt_map: <span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.adt_map,
-<a href=#287 id=287 data-nosnippet>287</a>            kvar_solutions: <span class="kw-2">&amp;</span><span class="self">self</span>.kvar_solutions,
-<a href=#288 id=288 data-nosnippet>288</a>            bool_mode: BoolMode::Bool,
-<a href=#289 id=289 data-nosnippet>289</a>        }
-<a href=#290 id=290 data-nosnippet>290</a>    }
-<a href=#291 id=291 data-nosnippet>291</a>
-<a href=#292 id=292 data-nosnippet>292</a>    <span class="kw">fn </span>datasort_name(<span class="kw-2">&amp;</span><span class="self">self</span>, sort: <span class="kw-2">&amp;</span>fixpoint::DataSort) -&gt; String {
-<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw">let </span>name = <span class="macro">format!</span>(<span class="string">"{}"</span>, WithLeanCtxt { item: sort, cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx() });
-<a href=#294 id=294 data-nosnippet>294</a>        snake_case_to_pascal_case(<span class="kw-2">&amp;</span>name)
+<a href=#264 id=264 data-nosnippet>264</a>
+<a href=#265 id=265 data-nosnippet>265</a>    <span class="kw">pub fn </span>import(<span class="kw-2">&amp;</span><span class="self">self</span>, genv: GlobalEnv) -&gt; String {
+<a href=#266 id=266 data-nosnippet>266</a>        <span class="macro">format!</span>(<span class="string">"import {}"</span>, <span class="self">self</span>.segments(genv).join(<span class="string">"."</span>))
+<a href=#267 id=267 data-nosnippet>267</a>    }
+<a href=#268 id=268 data-nosnippet>268</a>}
+<a href=#269 id=269 data-nosnippet>269</a>
+<a href=#270 id=270 data-nosnippet>270</a><span class="kw">pub struct </span>LeanEncoder&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#271 id=271 data-nosnippet>271</a>    genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#272 id=272 data-nosnippet>272</a>    def_id: MaybeExternId,
+<a href=#273 id=273 data-nosnippet>273</a>    pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
+<a href=#274 id=274 data-nosnippet>274</a>    sort_deps: SortDeps,
+<a href=#275 id=275 data-nosnippet>275</a>    fun_deps: Vec&lt;fixpoint::FunDef&gt;,
+<a href=#276 id=276 data-nosnippet>276</a>    constants: ConstDeps,
+<a href=#277 id=277 data-nosnippet>277</a>    kvar_solutions: KVarSolutions,
+<a href=#278 id=278 data-nosnippet>278</a>    kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
+<a href=#279 id=279 data-nosnippet>279</a>    constraint: fixpoint::Constraint,
+<a href=#280 id=280 data-nosnippet>280</a>    sort_files: FxHashMap&lt;fixpoint::DataSort, LeanFile&gt;,
+<a href=#281 id=281 data-nosnippet>281</a>    fun_files: FxHashMap&lt;FluxDefId, LeanFile&gt;,
+<a href=#282 id=282 data-nosnippet>282</a>    const_files: FxHashMap&lt;fixpoint::Var, LeanFile&gt;,
+<a href=#283 id=283 data-nosnippet>283</a>}
+<a href=#284 id=284 data-nosnippet>284</a>
+<a href=#285 id=285 data-nosnippet>285</a><span class="kw">impl</span>&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; LeanEncoder&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#286 id=286 data-nosnippet>286</a>    <span class="kw">fn </span>lean_cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; LeanCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#287 id=287 data-nosnippet>287</a>        LeanCtxt {
+<a href=#288 id=288 data-nosnippet>288</a>            genv: <span class="self">self</span>.genv,
+<a href=#289 id=289 data-nosnippet>289</a>            pretty_var_map: <span class="kw-2">&amp;</span><span class="self">self</span>.pretty_var_map,
+<a href=#290 id=290 data-nosnippet>290</a>            adt_map: <span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.adt_map,
+<a href=#291 id=291 data-nosnippet>291</a>            opaque_adt_map: <span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts,
+<a href=#292 id=292 data-nosnippet>292</a>            kvar_solutions: <span class="kw-2">&amp;</span><span class="self">self</span>.kvar_solutions,
+<a href=#293 id=293 data-nosnippet>293</a>            bool_mode: BoolMode::Bool,
+<a href=#294 id=294 data-nosnippet>294</a>        }
 <a href=#295 id=295 data-nosnippet>295</a>    }
 <a href=#296 id=296 data-nosnippet>296</a>
-<a href=#297 id=297 data-nosnippet>297</a>    <span class="kw">fn </span>lean_file_for_fun(<span class="kw-2">&amp;</span><span class="self">self</span>, fun: <span class="kw-2">&amp;</span>fixpoint::FunDef) -&gt; LeanFile {
-<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">let </span>name = <span class="self">self</span>.var_name(<span class="kw-2">&amp;</span>fun.name);
-<a href=#299 id=299 data-nosnippet>299</a>        <span class="kw">if </span>fun.body.is_some() { LeanFile::Fun(name) } <span class="kw">else </span>{ LeanFile::OpaqueFun(name) }
+<a href=#297 id=297 data-nosnippet>297</a>    <span class="kw">fn </span>datasort_name(<span class="kw-2">&amp;</span><span class="self">self</span>, sort: <span class="kw-2">&amp;</span>fixpoint::DataSort) -&gt; String {
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">let </span>name = <span class="macro">format!</span>(<span class="string">"{}"</span>, WithLeanCtxt { item: sort, cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx() });
+<a href=#299 id=299 data-nosnippet>299</a>        snake_case_to_pascal_case(<span class="kw-2">&amp;</span>name)
 <a href=#300 id=300 data-nosnippet>300</a>    }
 <a href=#301 id=301 data-nosnippet>301</a>
-<a href=#302 id=302 data-nosnippet>302</a>    <span class="kw">fn </span>lean_file_for_interpreted_const(<span class="kw-2">&amp;</span><span class="self">self</span>, const_: <span class="kw-2">&amp;</span>InterpretedConst) -&gt; LeanFile {
-<a href=#303 id=303 data-nosnippet>303</a>        <span class="kw">let </span>name = <span class="self">self</span>.var_name(<span class="kw-2">&amp;</span>const_.<span class="number">0</span>.name);
-<a href=#304 id=304 data-nosnippet>304</a>        LeanFile::Fun(name)
+<a href=#302 id=302 data-nosnippet>302</a>    <span class="kw">fn </span>lean_file_for_fun(<span class="kw-2">&amp;</span><span class="self">self</span>, fun: <span class="kw-2">&amp;</span>fixpoint::FunDef) -&gt; LeanFile {
+<a href=#303 id=303 data-nosnippet>303</a>        <span class="kw">let </span>name = <span class="self">self</span>.var_name(<span class="kw-2">&amp;</span>fun.name);
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="kw">if </span>fun.body.is_some() { LeanFile::Fun(name) } <span class="kw">else </span>{ LeanFile::OpaqueFun(name) }
 <a href=#305 id=305 data-nosnippet>305</a>    }
 <a href=#306 id=306 data-nosnippet>306</a>
-<a href=#307 id=307 data-nosnippet>307</a>    <span class="kw">fn </span>var_name(<span class="kw-2">&amp;</span><span class="self">self</span>, var: <span class="kw-2">&amp;</span>fixpoint::Var) -&gt; String {
-<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">let </span>name = <span class="macro">format!</span>(<span class="string">"{}"</span>, WithLeanCtxt { item: var, cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx() });
-<a href=#309 id=309 data-nosnippet>309</a>        snake_case_to_pascal_case(<span class="kw-2">&amp;</span>name)
+<a href=#307 id=307 data-nosnippet>307</a>    <span class="kw">fn </span>lean_file_for_interpreted_const(<span class="kw-2">&amp;</span><span class="self">self</span>, const_: <span class="kw-2">&amp;</span>InterpretedConst) -&gt; LeanFile {
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">let </span>name = <span class="self">self</span>.var_name(<span class="kw-2">&amp;</span>const_.<span class="number">0</span>.name);
+<a href=#309 id=309 data-nosnippet>309</a>        LeanFile::Fun(name)
 <a href=#310 id=310 data-nosnippet>310</a>    }
 <a href=#311 id=311 data-nosnippet>311</a>
-<a href=#312 id=312 data-nosnippet>312</a>    <span class="kw">fn </span>import(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;</span>LeanFile) -&gt; String {
-<a href=#313 id=313 data-nosnippet>313</a>        <span class="macro">format!</span>(<span class="string">"import {}"</span>, file.segments(<span class="self">self</span>.genv).join(<span class="string">"."</span>))
-<a href=#314 id=314 data-nosnippet>314</a>    }
-<a href=#315 id=315 data-nosnippet>315</a>
-<a href=#316 id=316 data-nosnippet>316</a>    <span class="kw">fn </span>new(
-<a href=#317 id=317 data-nosnippet>317</a>        genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
-<a href=#318 id=318 data-nosnippet>318</a>        def_id: MaybeExternId,
-<a href=#319 id=319 data-nosnippet>319</a>        pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
-<a href=#320 id=320 data-nosnippet>320</a>        sort_deps: SortDeps,
-<a href=#321 id=321 data-nosnippet>321</a>        fun_deps: Vec&lt;fixpoint::FunDef&gt;,
-<a href=#322 id=322 data-nosnippet>322</a>        constants: ConstDeps,
-<a href=#323 id=323 data-nosnippet>323</a>        kvar_solutions: KVarSolutions,
-<a href=#324 id=324 data-nosnippet>324</a>        kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
-<a href=#325 id=325 data-nosnippet>325</a>        constraint: fixpoint::Constraint,
-<a href=#326 id=326 data-nosnippet>326</a>    ) -&gt; io::Result&lt;<span class="self">Self</span>&gt; {
-<a href=#327 id=327 data-nosnippet>327</a>        <span class="kw">let </span><span class="kw-2">mut </span>encoder = <span class="self">Self </span>{
-<a href=#328 id=328 data-nosnippet>328</a>            genv,
-<a href=#329 id=329 data-nosnippet>329</a>            def_id,
-<a href=#330 id=330 data-nosnippet>330</a>            pretty_var_map,
-<a href=#331 id=331 data-nosnippet>331</a>            sort_deps,
-<a href=#332 id=332 data-nosnippet>332</a>            fun_deps,
-<a href=#333 id=333 data-nosnippet>333</a>            constants,
-<a href=#334 id=334 data-nosnippet>334</a>            kvar_decls,
-<a href=#335 id=335 data-nosnippet>335</a>            kvar_solutions,
-<a href=#336 id=336 data-nosnippet>336</a>            constraint,
-<a href=#337 id=337 data-nosnippet>337</a>            fun_files: FxHashMap::default(),
-<a href=#338 id=338 data-nosnippet>338</a>            sort_files: FxHashMap::default(),
-<a href=#339 id=339 data-nosnippet>339</a>            const_files: FxHashMap::default(),
-<a href=#340 id=340 data-nosnippet>340</a>        };
-<a href=#341 id=341 data-nosnippet>341</a>        encoder.fun_files = encoder.fun_files();
-<a href=#342 id=342 data-nosnippet>342</a>        encoder.sort_files = encoder.sort_files();
-<a href=#343 id=343 data-nosnippet>343</a>        encoder.const_files = encoder.const_files();
-<a href=#344 id=344 data-nosnippet>344</a>        <span class="prelude-val">Ok</span>(encoder)
-<a href=#345 id=345 data-nosnippet>345</a>    }
-<a href=#346 id=346 data-nosnippet>346</a>
-<a href=#347 id=347 data-nosnippet>347</a>    <span class="kw">fn </span>run(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
-<a href=#348 id=348 data-nosnippet>348</a>        <span class="self">self</span>.generate_lake_project_if_not_present()<span class="question-mark">?</span>;
-<a href=#349 id=349 data-nosnippet>349</a>        <span class="self">self</span>.generate_lib_if_absent()<span class="question-mark">?</span>;
-<a href=#350 id=350 data-nosnippet>350</a>        <span class="self">self</span>.generate_vc_file()<span class="question-mark">?</span>;
-<a href=#351 id=351 data-nosnippet>351</a>        <span class="self">self</span>.generate_proof_if_absent()<span class="question-mark">?</span>;
-<a href=#352 id=352 data-nosnippet>352</a>        <span class="self">self</span>.record_proof()<span class="question-mark">?</span>;
+<a href=#312 id=312 data-nosnippet>312</a>    <span class="kw">fn </span>var_name(<span class="kw-2">&amp;</span><span class="self">self</span>, var: <span class="kw-2">&amp;</span>fixpoint::Var) -&gt; String {
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">let </span>name = <span class="macro">format!</span>(<span class="string">"{}"</span>, WithLeanCtxt { item: var, cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx() });
+<a href=#314 id=314 data-nosnippet>314</a>        snake_case_to_pascal_case(<span class="kw-2">&amp;</span>name)
+<a href=#315 id=315 data-nosnippet>315</a>    }
+<a href=#316 id=316 data-nosnippet>316</a>
+<a href=#317 id=317 data-nosnippet>317</a>    <span class="kw">fn </span>new(
+<a href=#318 id=318 data-nosnippet>318</a>        genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#319 id=319 data-nosnippet>319</a>        def_id: MaybeExternId,
+<a href=#320 id=320 data-nosnippet>320</a>        pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
+<a href=#321 id=321 data-nosnippet>321</a>        sort_deps: SortDeps,
+<a href=#322 id=322 data-nosnippet>322</a>        fun_deps: Vec&lt;fixpoint::FunDef&gt;,
+<a href=#323 id=323 data-nosnippet>323</a>        constants: ConstDeps,
+<a href=#324 id=324 data-nosnippet>324</a>        kvar_solutions: KVarSolutions,
+<a href=#325 id=325 data-nosnippet>325</a>        kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
+<a href=#326 id=326 data-nosnippet>326</a>        constraint: fixpoint::Constraint,
+<a href=#327 id=327 data-nosnippet>327</a>    ) -&gt; io::Result&lt;<span class="self">Self</span>&gt; {
+<a href=#328 id=328 data-nosnippet>328</a>        <span class="kw">let </span><span class="kw-2">mut </span>encoder = <span class="self">Self </span>{
+<a href=#329 id=329 data-nosnippet>329</a>            genv,
+<a href=#330 id=330 data-nosnippet>330</a>            def_id,
+<a href=#331 id=331 data-nosnippet>331</a>            pretty_var_map,
+<a href=#332 id=332 data-nosnippet>332</a>            sort_deps,
+<a href=#333 id=333 data-nosnippet>333</a>            fun_deps,
+<a href=#334 id=334 data-nosnippet>334</a>            constants,
+<a href=#335 id=335 data-nosnippet>335</a>            kvar_decls,
+<a href=#336 id=336 data-nosnippet>336</a>            kvar_solutions,
+<a href=#337 id=337 data-nosnippet>337</a>            constraint,
+<a href=#338 id=338 data-nosnippet>338</a>            fun_files: FxHashMap::default(),
+<a href=#339 id=339 data-nosnippet>339</a>            sort_files: FxHashMap::default(),
+<a href=#340 id=340 data-nosnippet>340</a>            const_files: FxHashMap::default(),
+<a href=#341 id=341 data-nosnippet>341</a>        };
+<a href=#342 id=342 data-nosnippet>342</a>        encoder.fun_files = encoder.fun_files();
+<a href=#343 id=343 data-nosnippet>343</a>        encoder.sort_files = encoder.sort_files();
+<a href=#344 id=344 data-nosnippet>344</a>        encoder.const_files = encoder.const_files();
+<a href=#345 id=345 data-nosnippet>345</a>        <span class="prelude-val">Ok</span>(encoder)
+<a href=#346 id=346 data-nosnippet>346</a>    }
+<a href=#347 id=347 data-nosnippet>347</a>
+<a href=#348 id=348 data-nosnippet>348</a>    <span class="kw">fn </span>run(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
+<a href=#349 id=349 data-nosnippet>349</a>        <span class="self">self</span>.generate_lake_project_if_not_present()<span class="question-mark">?</span>;
+<a href=#350 id=350 data-nosnippet>350</a>        <span class="self">self</span>.generate_lib_if_absent()<span class="question-mark">?</span>;
+<a href=#351 id=351 data-nosnippet>351</a>        <span class="self">self</span>.generate_vc_file()<span class="question-mark">?</span>;
+<a href=#352 id=352 data-nosnippet>352</a>        <span class="self">self</span>.generate_proof_if_absent()<span class="question-mark">?</span>;
 <a href=#353 id=353 data-nosnippet>353</a>        <span class="prelude-val">Ok</span>(())
 <a href=#354 id=354 data-nosnippet>354</a>    }
 <a href=#355 id=355 data-nosnippet>355</a>
@@ -368,7 +368,7 @@
 <a href=#368 id=368 data-nosnippet>368</a>
 <a href=#369 id=369 data-nosnippet>369</a>    <span class="kw">fn </span>sort_files(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; FxHashMap&lt;fixpoint::DataSort, LeanFile&gt; {
 <a href=#370 id=370 data-nosnippet>370</a>        <span class="kw">let </span><span class="kw-2">mut </span>res = FxHashMap::default();
-<a href=#371 id=371 data-nosnippet>371</a>        <span class="kw">for </span>sort <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
+<a href=#371 id=371 data-nosnippet>371</a>        <span class="kw">for </span>(<span class="kw">_</span>, sort) <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
 <a href=#372 id=372 data-nosnippet>372</a>            <span class="kw">let </span>data_sort = sort.name.clone();
 <a href=#373 id=373 data-nosnippet>373</a>            <span class="kw">let </span>name = <span class="self">self</span>.datasort_name(<span class="kw-2">&amp;</span>sort.name);
 <a href=#374 id=374 data-nosnippet>374</a>            <span class="kw">let </span>file = LeanFile::OpaqueSort(name);
@@ -415,7 +415,7 @@
 <a href=#415 id=415 data-nosnippet>415</a>
 <a href=#416 id=416 data-nosnippet>416</a>        <span class="kw">let </span>path = file.path(<span class="self">self</span>.genv);
 <a href=#417 id=417 data-nosnippet>417</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
-<a href=#418 id=418 data-nosnippet>418</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
+<a href=#418 id=418 data-nosnippet>418</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="kw-2">&amp;</span>LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#419 id=419 data-nosnippet>419</a>            namespaced(<span class="kw-2">&amp;mut </span>file, |f| {
 <a href=#420 id=420 data-nosnippet>420</a>                <span class="macro">writeln!</span>(f, <span class="string">"def {} := sorry"</span>, WithLeanCtxt { item: sort, cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx() })
 <a href=#421 id=421 data-nosnippet>421</a>            })<span class="question-mark">?</span>;
@@ -451,10 +451,10 @@
 <a href=#451 id=451 data-nosnippet>451</a>        <span class="comment">// No need to regenerate if created in this session; but otherwise regenerate as struct may have changed
 <a href=#452 id=452 data-nosnippet>452</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
 <a href=#453 id=453 data-nosnippet>453</a>            <span class="comment">// import prelude
-<a href=#454 id=454 data-nosnippet>454</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
+<a href=#454 id=454 data-nosnippet>454</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="kw-2">&amp;</span>LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#455 id=455 data-nosnippet>455</a>            <span class="comment">// import sort dependencies
 <a href=#456 id=456 data-nosnippet>456</a>            </span><span class="kw">for </span>dep <span class="kw">in </span><span class="self">self</span>.data_decl_dependencies(data_decl) {
-<a href=#457 id=457 data-nosnippet>457</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(dep))<span class="question-mark">?</span>;
+<a href=#457 id=457 data-nosnippet>457</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, dep.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#458 id=458 data-nosnippet>458</a>            }
 <a href=#459 id=459 data-nosnippet>459</a>
 <a href=#460 id=460 data-nosnippet>460</a>            <span class="comment">// write data decl
@@ -522,10 +522,10 @@
 <a href=#522 id=522 data-nosnippet>522</a>        <span class="kw">let </span>path = <span class="self">self</span>.lean_file_for_fun(fun_def).path(<span class="self">self</span>.genv);
 <a href=#523 id=523 data-nosnippet>523</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
 <a href=#524 id=524 data-nosnippet>524</a>            <span class="comment">// import prelude
-<a href=#525 id=525 data-nosnippet>525</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
+<a href=#525 id=525 data-nosnippet>525</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="kw-2">&amp;</span>LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#526 id=526 data-nosnippet>526</a>            <span class="comment">// import sort dependencies
 <a href=#527 id=527 data-nosnippet>527</a>            </span><span class="kw">for </span>dep <span class="kw">in </span><span class="self">self</span>.fun_def_dependencies(did, fun_def) {
-<a href=#528 id=528 data-nosnippet>528</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(dep))<span class="question-mark">?</span>;
+<a href=#528 id=528 data-nosnippet>528</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, dep.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#529 id=529 data-nosnippet>529</a>            }
 <a href=#530 id=530 data-nosnippet>530</a>
 <a href=#531 id=531 data-nosnippet>531</a>            <span class="comment">// write fun def
@@ -547,12 +547,12 @@
 <a href=#547 id=547 data-nosnippet>547</a>            .path(<span class="self">self</span>.genv);
 <a href=#548 id=548 data-nosnippet>548</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
 <a href=#549 id=549 data-nosnippet>549</a>            <span class="comment">// import prelude
-<a href=#550 id=550 data-nosnippet>550</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
+<a href=#550 id=550 data-nosnippet>550</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="kw-2">&amp;</span>LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#551 id=551 data-nosnippet>551</a>
 <a href=#552 id=552 data-nosnippet>552</a>            <span class="kw">let </span><span class="kw-2">mut </span>sort_deps = <span class="macro">vec!</span>[];
 <a href=#553 id=553 data-nosnippet>553</a>            const_decl.sort.deps(<span class="kw-2">&amp;mut </span>sort_deps);
 <a href=#554 id=554 data-nosnippet>554</a>            <span class="kw">for </span>dep <span class="kw">in </span>sort_deps {
-<a href=#555 id=555 data-nosnippet>555</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="self">self</span>.sort_file(<span class="kw-2">&amp;</span>dep)))<span class="question-mark">?</span>;
+<a href=#555 id=555 data-nosnippet>555</a>                <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.sort_file(<span class="kw-2">&amp;</span>dep).import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#556 id=556 data-nosnippet>556</a>            }
 <a href=#557 id=557 data-nosnippet>557</a>
 <a href=#558 id=558 data-nosnippet>558</a>            namespaced(<span class="kw-2">&amp;mut </span>file, |f| {
@@ -624,7 +624,7 @@
 <a href=#624 id=624 data-nosnippet>624</a>        </span><span class="self">self</span>.generate_lib_if_absent()<span class="question-mark">?</span>;
 <a href=#625 id=625 data-nosnippet>625</a>
 <a href=#626 id=626 data-nosnippet>626</a>        <span class="comment">// 2. Generate Opaque Struct Files
-<a href=#627 id=627 data-nosnippet>627</a>        </span><span class="kw">for </span>sort <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
+<a href=#627 id=627 data-nosnippet>627</a>        </span><span class="kw">for </span>(<span class="kw">_</span>, sort) <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
 <a href=#628 id=628 data-nosnippet>628</a>            <span class="self">self</span>.generate_opaque_sort_file_if_not_present(sort)<span class="question-mark">?</span>;
 <a href=#629 id=629 data-nosnippet>629</a>        }
 <a href=#630 id=630 data-nosnippet>630</a>        <span class="comment">// 2. Generate Struct Files
@@ -646,75 +646,75 @@
 <a href=#646 id=646 data-nosnippet>646</a>    }
 <a href=#647 id=647 data-nosnippet>647</a>
 <a href=#648 id=648 data-nosnippet>648</a>    <span class="kw">fn </span>generate_vc_imports(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;mut </span>fs::File) -&gt; io::Result&lt;()&gt; {
-<a href=#649 id=649 data-nosnippet>649</a>        <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
+<a href=#649 id=649 data-nosnippet>649</a>        <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#650 id=650 data-nosnippet>650</a>
-<a href=#651 id=651 data-nosnippet>651</a>        <span class="kw">for </span>sort <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
+<a href=#651 id=651 data-nosnippet>651</a>        <span class="kw">for </span>(<span class="kw">_</span>, sort) <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.opaque_sorts {
 <a href=#652 id=652 data-nosnippet>652</a>            <span class="kw">let </span>name = <span class="self">self</span>.datasort_name(<span class="kw-2">&amp;</span>sort.name);
-<a href=#653 id=653 data-nosnippet>653</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::OpaqueSort(name)))<span class="question-mark">?</span>;
+<a href=#653 id=653 data-nosnippet>653</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::OpaqueSort(name).import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#654 id=654 data-nosnippet>654</a>        }
 <a href=#655 id=655 data-nosnippet>655</a>
 <a href=#656 id=656 data-nosnippet>656</a>        <span class="kw">for </span>data_decl <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.sort_deps.data_decls {
 <a href=#657 id=657 data-nosnippet>657</a>            <span class="kw">let </span>name = <span class="self">self</span>.datasort_name(<span class="kw-2">&amp;</span>data_decl.name);
-<a href=#658 id=658 data-nosnippet>658</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Struct(name)))<span class="question-mark">?</span>;
+<a href=#658 id=658 data-nosnippet>658</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::Struct(name).import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#659 id=659 data-nosnippet>659</a>        }
 <a href=#660 id=660 data-nosnippet>660</a>
 <a href=#661 id=661 data-nosnippet>661</a>        <span class="kw">for </span>fun_def <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.fun_deps {
-<a href=#662 id=662 data-nosnippet>662</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span><span class="self">self</span>.lean_file_for_fun(fun_def)))<span class="question-mark">?</span>;
+<a href=#662 id=662 data-nosnippet>662</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.lean_file_for_fun(fun_def).import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#663 id=663 data-nosnippet>663</a>        }
 <a href=#664 id=664 data-nosnippet>664</a>
 <a href=#665 id=665 data-nosnippet>665</a>        <span class="kw">for </span>const_decl <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.constants.interpreted {
-<a href=#666 id=666 data-nosnippet>666</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span><span class="self">self</span>.lean_file_for_interpreted_const(const_decl)))<span class="question-mark">?</span>;
-<a href=#667 id=667 data-nosnippet>667</a>        }
-<a href=#668 id=668 data-nosnippet>668</a>
-<a href=#669 id=669 data-nosnippet>669</a>        <span class="prelude-val">Ok</span>(())
-<a href=#670 id=670 data-nosnippet>670</a>    }
-<a href=#671 id=671 data-nosnippet>671</a>
-<a href=#672 id=672 data-nosnippet>672</a>    <span class="kw">fn </span>generate_vc_file(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
-<a href=#673 id=673 data-nosnippet>673</a>        <span class="comment">// 1. Generate imports
-<a href=#674 id=674 data-nosnippet>674</a>        </span><span class="self">self</span>.generate_vc_prelude()<span class="question-mark">?</span>;
-<a href=#675 id=675 data-nosnippet>675</a>
-<a href=#676 id=676 data-nosnippet>676</a>        <span class="comment">// 2. Create file and add imports
-<a href=#677 id=677 data-nosnippet>677</a>        </span><span class="kw">let </span>def_id = <span class="self">self</span>.def_id.resolved_id();
-<a href=#678 id=678 data-nosnippet>678</a>        <span class="kw">let </span>path = LeanFile::Vc(def_id).path(<span class="self">self</span>.genv);
-<a href=#679 id=679 data-nosnippet>679</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
-<a href=#680 id=680 data-nosnippet>680</a>            <span class="self">self</span>.generate_vc_imports(<span class="kw-2">&amp;mut </span>file)<span class="question-mark">?</span>;
-<a href=#681 id=681 data-nosnippet>681</a>
-<a href=#682 id=682 data-nosnippet>682</a>            <span class="kw">let </span>vc_name = vc_name(<span class="self">self</span>.genv, def_id);
-<a href=#683 id=683 data-nosnippet>683</a>            <span class="comment">// 3. Write the VC
-<a href=#684 id=684 data-nosnippet>684</a>            </span>namespaced(<span class="kw-2">&amp;mut </span>file, |f| {
-<a href=#685 id=685 data-nosnippet>685</a>                <span class="macro">write!</span>(
-<a href=#686 id=686 data-nosnippet>686</a>                    f,
-<a href=#687 id=687 data-nosnippet>687</a>                    <span class="string">"{}"</span>,
-<a href=#688 id=688 data-nosnippet>688</a>                    WithLeanCtxt {
-<a href=#689 id=689 data-nosnippet>689</a>                        item: lean_format::LeanKConstraint {
-<a href=#690 id=690 data-nosnippet>690</a>                            theorem_name: <span class="kw-2">&amp;</span>vc_name,
-<a href=#691 id=691 data-nosnippet>691</a>                            kvars: <span class="kw-2">&amp;</span><span class="self">self</span>.kvar_decls,
-<a href=#692 id=692 data-nosnippet>692</a>                            constr: <span class="kw-2">&amp;</span><span class="self">self</span>.constraint,
-<a href=#693 id=693 data-nosnippet>693</a>                        },
-<a href=#694 id=694 data-nosnippet>694</a>                        cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx()
-<a href=#695 id=695 data-nosnippet>695</a>                    }
-<a href=#696 id=696 data-nosnippet>696</a>                )
-<a href=#697 id=697 data-nosnippet>697</a>            })<span class="question-mark">?</span>;
-<a href=#698 id=698 data-nosnippet>698</a>            file.sync_all()<span class="question-mark">?</span>;
-<a href=#699 id=699 data-nosnippet>699</a>        }
-<a href=#700 id=700 data-nosnippet>700</a>
-<a href=#701 id=701 data-nosnippet>701</a>        <span class="prelude-val">Ok</span>(())
-<a href=#702 id=702 data-nosnippet>702</a>    }
-<a href=#703 id=703 data-nosnippet>703</a>
-<a href=#704 id=704 data-nosnippet>704</a>    <span class="kw">fn </span>generate_proof_if_absent(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
-<a href=#705 id=705 data-nosnippet>705</a>        <span class="kw">let </span>def_id = <span class="self">self</span>.def_id.resolved_id();
-<a href=#706 id=706 data-nosnippet>706</a>        <span class="kw">let </span>vc_name = vc_name(<span class="self">self</span>.genv, def_id);
-<a href=#707 id=707 data-nosnippet>707</a>        <span class="kw">let </span>proof_name = <span class="macro">format!</span>(<span class="string">"{vc_name}_proof"</span>);
-<a href=#708 id=708 data-nosnippet>708</a>        <span class="kw">let </span>path = LeanFile::Proof(def_id).path(<span class="self">self</span>.genv);
-<a href=#709 id=709 data-nosnippet>709</a>
-<a href=#710 id=710 data-nosnippet>710</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(span) = <span class="self">self</span>.genv.proven_externally(<span class="self">self</span>.def_id.local_id()) {
-<a href=#711 id=711 data-nosnippet>711</a>            <span class="kw">let </span>dst_span = SpanTrace::from_path(<span class="kw-2">&amp;</span>path, <span class="number">3</span>, <span class="number">5</span>, proof_name.len());
-<a href=#712 id=712 data-nosnippet>712</a>            <span class="macro">dbg::hyperlink_json!</span>(<span class="self">self</span>.genv.tcx(), span, dst_span);
-<a href=#713 id=713 data-nosnippet>713</a>        }
+<a href=#666 id=666 data-nosnippet>666</a>            <span class="macro">writeln!</span>(
+<a href=#667 id=667 data-nosnippet>667</a>                file,
+<a href=#668 id=668 data-nosnippet>668</a>                <span class="string">"{}"</span>,
+<a href=#669 id=669 data-nosnippet>669</a>                <span class="self">self</span>.lean_file_for_interpreted_const(const_decl)
+<a href=#670 id=670 data-nosnippet>670</a>                    .import(<span class="self">self</span>.genv)
+<a href=#671 id=671 data-nosnippet>671</a>            )<span class="question-mark">?</span>;
+<a href=#672 id=672 data-nosnippet>672</a>        }
+<a href=#673 id=673 data-nosnippet>673</a>
+<a href=#674 id=674 data-nosnippet>674</a>        <span class="prelude-val">Ok</span>(())
+<a href=#675 id=675 data-nosnippet>675</a>    }
+<a href=#676 id=676 data-nosnippet>676</a>
+<a href=#677 id=677 data-nosnippet>677</a>    <span class="kw">fn </span>generate_vc_file(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
+<a href=#678 id=678 data-nosnippet>678</a>        <span class="comment">// 1. Generate imports
+<a href=#679 id=679 data-nosnippet>679</a>        </span><span class="self">self</span>.generate_vc_prelude()<span class="question-mark">?</span>;
+<a href=#680 id=680 data-nosnippet>680</a>
+<a href=#681 id=681 data-nosnippet>681</a>        <span class="comment">// 2. Create file and add imports
+<a href=#682 id=682 data-nosnippet>682</a>        </span><span class="kw">let </span>def_id = <span class="self">self</span>.def_id.resolved_id();
+<a href=#683 id=683 data-nosnippet>683</a>        <span class="kw">let </span>path = LeanFile::Vc(def_id).path(<span class="self">self</span>.genv);
+<a href=#684 id=684 data-nosnippet>684</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
+<a href=#685 id=685 data-nosnippet>685</a>            <span class="self">self</span>.generate_vc_imports(<span class="kw-2">&amp;mut </span>file)<span class="question-mark">?</span>;
+<a href=#686 id=686 data-nosnippet>686</a>
+<a href=#687 id=687 data-nosnippet>687</a>            <span class="kw">let </span>vc_name = vc_name(<span class="self">self</span>.genv, def_id);
+<a href=#688 id=688 data-nosnippet>688</a>            <span class="comment">// 3. Write the VC
+<a href=#689 id=689 data-nosnippet>689</a>            </span>namespaced(<span class="kw-2">&amp;mut </span>file, |f| {
+<a href=#690 id=690 data-nosnippet>690</a>                <span class="macro">write!</span>(
+<a href=#691 id=691 data-nosnippet>691</a>                    f,
+<a href=#692 id=692 data-nosnippet>692</a>                    <span class="string">"{}"</span>,
+<a href=#693 id=693 data-nosnippet>693</a>                    WithLeanCtxt {
+<a href=#694 id=694 data-nosnippet>694</a>                        item: lean_format::LeanKConstraint {
+<a href=#695 id=695 data-nosnippet>695</a>                            theorem_name: <span class="kw-2">&amp;</span>vc_name,
+<a href=#696 id=696 data-nosnippet>696</a>                            kvars: <span class="kw-2">&amp;</span><span class="self">self</span>.kvar_decls,
+<a href=#697 id=697 data-nosnippet>697</a>                            constr: <span class="kw-2">&amp;</span><span class="self">self</span>.constraint,
+<a href=#698 id=698 data-nosnippet>698</a>                        },
+<a href=#699 id=699 data-nosnippet>699</a>                        cx: <span class="kw-2">&amp;</span><span class="self">self</span>.lean_cx()
+<a href=#700 id=700 data-nosnippet>700</a>                    }
+<a href=#701 id=701 data-nosnippet>701</a>                )
+<a href=#702 id=702 data-nosnippet>702</a>            })<span class="question-mark">?</span>;
+<a href=#703 id=703 data-nosnippet>703</a>            file.sync_all()<span class="question-mark">?</span>;
+<a href=#704 id=704 data-nosnippet>704</a>        }
+<a href=#705 id=705 data-nosnippet>705</a>
+<a href=#706 id=706 data-nosnippet>706</a>        <span class="prelude-val">Ok</span>(())
+<a href=#707 id=707 data-nosnippet>707</a>    }
+<a href=#708 id=708 data-nosnippet>708</a>
+<a href=#709 id=709 data-nosnippet>709</a>    <span class="kw">fn </span>generate_proof_if_absent(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
+<a href=#710 id=710 data-nosnippet>710</a>        <span class="kw">let </span>def_id = <span class="self">self</span>.def_id.resolved_id();
+<a href=#711 id=711 data-nosnippet>711</a>        <span class="kw">let </span>vc_name = vc_name(<span class="self">self</span>.genv, def_id);
+<a href=#712 id=712 data-nosnippet>712</a>        <span class="kw">let </span>proof_name = <span class="macro">format!</span>(<span class="string">"{vc_name}_proof"</span>);
+<a href=#713 id=713 data-nosnippet>713</a>        <span class="kw">let </span>path = LeanFile::Proof(def_id).path(<span class="self">self</span>.genv);
 <a href=#714 id=714 data-nosnippet>714</a>
 <a href=#715 id=715 data-nosnippet>715</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) = create_file_with_dirs(path)<span class="question-mark">? </span>{
-<a href=#716 id=716 data-nosnippet>716</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Fluxlib))<span class="question-mark">?</span>;
-<a href=#717 id=717 data-nosnippet>717</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Vc(def_id)))<span class="question-mark">?</span>;
+<a href=#716 id=716 data-nosnippet>716</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::Fluxlib.import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
+<a href=#717 id=717 data-nosnippet>717</a>            <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::Vc(def_id).import(<span class="self">self</span>.genv))<span class="question-mark">?</span>;
 <a href=#718 id=718 data-nosnippet>718</a>            namespaced(<span class="kw-2">&amp;mut </span>file, |f| {
 <a href=#719 id=719 data-nosnippet>719</a>                <span class="macro">writeln!</span>(f, <span class="string">"def {proof_name} : {vc_name} := by"</span>)<span class="question-mark">?</span>;
 <a href=#720 id=720 data-nosnippet>720</a>                <span class="macro">writeln!</span>(f, <span class="string">"  unfold {vc_name}"</span>)<span class="question-mark">?</span>;
@@ -725,44 +725,73 @@
 <a href=#725 id=725 data-nosnippet>725</a>        <span class="prelude-val">Ok</span>(())
 <a href=#726 id=726 data-nosnippet>726</a>    }
 <a href=#727 id=727 data-nosnippet>727</a>
-<a href=#728 id=728 data-nosnippet>728</a>    <span class="kw">fn </span>record_proof(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;()&gt; {
-<a href=#729 id=729 data-nosnippet>729</a>        <span class="kw">let </span>path = LeanFile::Basic.path(<span class="self">self</span>.genv);
-<a href=#730 id=730 data-nosnippet>730</a>
-<a href=#731 id=731 data-nosnippet>731</a>        <span class="kw">let </span><span class="kw-2">mut </span>file = <span class="kw">match </span>create_file_with_dirs(<span class="kw-2">&amp;</span>path)<span class="question-mark">? </span>{
-<a href=#732 id=732 data-nosnippet>732</a>            <span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) =&gt; {
-<a href=#733 id=733 data-nosnippet>733</a>                <span class="comment">// First invocation: reset VCs
-<a href=#734 id=734 data-nosnippet>734</a>                </span><span class="macro">writeln!</span>(file, <span class="string">"-- Flux Basic Imports [DO NOT MODIFY] --"</span>)<span class="question-mark">?</span>;
-<a href=#735 id=735 data-nosnippet>735</a>                file
-<a href=#736 id=736 data-nosnippet>736</a>            }
-<a href=#737 id=737 data-nosnippet>737</a>            <span class="prelude-val">None </span>=&gt; fs::OpenOptions::new().append(<span class="bool-val">true</span>).open(path)<span class="question-mark">?</span>,
-<a href=#738 id=738 data-nosnippet>738</a>        };
-<a href=#739 id=739 data-nosnippet>739</a>        <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, <span class="self">self</span>.import(<span class="kw-2">&amp;</span>LeanFile::Proof(<span class="self">self</span>.def_id.resolved_id())))
-<a href=#740 id=740 data-nosnippet>740</a>    }
-<a href=#741 id=741 data-nosnippet>741</a>
-<a href=#742 id=742 data-nosnippet>742</a>    <span class="kw">pub fn </span>encode(
-<a href=#743 id=743 data-nosnippet>743</a>        genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
-<a href=#744 id=744 data-nosnippet>744</a>        def_id: MaybeExternId,
-<a href=#745 id=745 data-nosnippet>745</a>        pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
-<a href=#746 id=746 data-nosnippet>746</a>        sort_deps: SortDeps,
-<a href=#747 id=747 data-nosnippet>747</a>        fun_deps: Vec&lt;fixpoint::FunDef&gt;,
-<a href=#748 id=748 data-nosnippet>748</a>        constants: ConstDeps,
-<a href=#749 id=749 data-nosnippet>749</a>        kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
-<a href=#750 id=750 data-nosnippet>750</a>        constraint: fixpoint::Constraint,
-<a href=#751 id=751 data-nosnippet>751</a>        kvar_solutions: KVarSolutions,
-<a href=#752 id=752 data-nosnippet>752</a>    ) -&gt; io::Result&lt;()&gt; {
-<a href=#753 id=753 data-nosnippet>753</a>        <span class="kw">let </span>encoder = <span class="self">Self</span>::new(
-<a href=#754 id=754 data-nosnippet>754</a>            genv,
-<a href=#755 id=755 data-nosnippet>755</a>            def_id,
-<a href=#756 id=756 data-nosnippet>756</a>            pretty_var_map,
-<a href=#757 id=757 data-nosnippet>757</a>            sort_deps,
-<a href=#758 id=758 data-nosnippet>758</a>            fun_deps,
-<a href=#759 id=759 data-nosnippet>759</a>            constants,
-<a href=#760 id=760 data-nosnippet>760</a>            kvar_solutions,
-<a href=#761 id=761 data-nosnippet>761</a>            kvar_decls,
-<a href=#762 id=762 data-nosnippet>762</a>            constraint,
-<a href=#763 id=763 data-nosnippet>763</a>        )<span class="question-mark">?</span>;
-<a href=#764 id=764 data-nosnippet>764</a>        encoder.run()<span class="question-mark">?</span>;
-<a href=#765 id=765 data-nosnippet>765</a>        <span class="prelude-val">Ok</span>(())
-<a href=#766 id=766 data-nosnippet>766</a>    }
-<a href=#767 id=767 data-nosnippet>767</a>}
+<a href=#728 id=728 data-nosnippet>728</a>    <span class="kw">pub fn </span>encode(
+<a href=#729 id=729 data-nosnippet>729</a>        genv: GlobalEnv&lt;<span class="lifetime">'genv</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#730 id=730 data-nosnippet>730</a>        def_id: MaybeExternId,
+<a href=#731 id=731 data-nosnippet>731</a>        pretty_var_map: PrettyMap&lt;fixpoint::LocalVar&gt;,
+<a href=#732 id=732 data-nosnippet>732</a>        sort_deps: SortDeps,
+<a href=#733 id=733 data-nosnippet>733</a>        fun_deps: Vec&lt;fixpoint::FunDef&gt;,
+<a href=#734 id=734 data-nosnippet>734</a>        constants: ConstDeps,
+<a href=#735 id=735 data-nosnippet>735</a>        kvar_decls: Vec&lt;fixpoint::KVarDecl&gt;,
+<a href=#736 id=736 data-nosnippet>736</a>        constraint: fixpoint::Constraint,
+<a href=#737 id=737 data-nosnippet>737</a>        kvar_solutions: KVarSolutions,
+<a href=#738 id=738 data-nosnippet>738</a>    ) -&gt; io::Result&lt;()&gt; {
+<a href=#739 id=739 data-nosnippet>739</a>        <span class="kw">let </span>encoder = <span class="self">Self</span>::new(
+<a href=#740 id=740 data-nosnippet>740</a>            genv,
+<a href=#741 id=741 data-nosnippet>741</a>            def_id,
+<a href=#742 id=742 data-nosnippet>742</a>            pretty_var_map,
+<a href=#743 id=743 data-nosnippet>743</a>            sort_deps,
+<a href=#744 id=744 data-nosnippet>744</a>            fun_deps,
+<a href=#745 id=745 data-nosnippet>745</a>            constants,
+<a href=#746 id=746 data-nosnippet>746</a>            kvar_solutions,
+<a href=#747 id=747 data-nosnippet>747</a>            kvar_decls,
+<a href=#748 id=748 data-nosnippet>748</a>            constraint,
+<a href=#749 id=749 data-nosnippet>749</a>        )<span class="question-mark">?</span>;
+<a href=#750 id=750 data-nosnippet>750</a>        encoder.run()<span class="question-mark">?</span>;
+<a href=#751 id=751 data-nosnippet>751</a>        <span class="prelude-val">Ok</span>(())
+<a href=#752 id=752 data-nosnippet>752</a>    }
+<a href=#753 id=753 data-nosnippet>753</a>}
+<a href=#754 id=754 data-nosnippet>754</a>
+<a href=#755 id=755 data-nosnippet>755</a><span class="kw">fn </span>hyperlink_proof(genv: GlobalEnv, def_id: MaybeExternId) {
+<a href=#756 id=756 data-nosnippet>756</a>    <span class="kw">let </span>vc_name = vc_name(genv, def_id.resolved_id());
+<a href=#757 id=757 data-nosnippet>757</a>    <span class="kw">let </span>proof_name = <span class="macro">format!</span>(<span class="string">"{vc_name}_proof"</span>);
+<a href=#758 id=758 data-nosnippet>758</a>    <span class="kw">let </span>path = LeanFile::Proof(def_id.resolved_id()).path(genv);
+<a href=#759 id=759 data-nosnippet>759</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(span) = genv.proven_externally(def_id.local_id()) {
+<a href=#760 id=760 data-nosnippet>760</a>        <span class="kw">let </span>dst_span = SpanTrace::from_path(<span class="kw-2">&amp;</span>path, <span class="number">3</span>, <span class="number">5</span>, proof_name.len());
+<a href=#761 id=761 data-nosnippet>761</a>        <span class="macro">dbg::hyperlink_json!</span>(genv.tcx(), span, dst_span);
+<a href=#762 id=762 data-nosnippet>762</a>    }
+<a href=#763 id=763 data-nosnippet>763</a>}
+<a href=#764 id=764 data-nosnippet>764</a>
+<a href=#765 id=765 data-nosnippet>765</a><span class="kw">fn </span>record_proof(genv: GlobalEnv, def_id: MaybeExternId) -&gt; io::Result&lt;()&gt; {
+<a href=#766 id=766 data-nosnippet>766</a>    <span class="kw">let </span>path = LeanFile::Basic.path(genv);
+<a href=#767 id=767 data-nosnippet>767</a>
+<a href=#768 id=768 data-nosnippet>768</a>    <span class="kw">let </span><span class="kw-2">mut </span>file = <span class="kw">match </span>create_file_with_dirs(<span class="kw-2">&amp;</span>path)<span class="question-mark">? </span>{
+<a href=#769 id=769 data-nosnippet>769</a>        <span class="prelude-val">Some</span>(<span class="kw-2">mut </span>file) =&gt; {
+<a href=#770 id=770 data-nosnippet>770</a>            <span class="comment">// First invocation: reset VCs
+<a href=#771 id=771 data-nosnippet>771</a>            </span><span class="macro">writeln!</span>(file, <span class="string">"-- Flux Basic Imports [DO NOT MODIFY] --"</span>)<span class="question-mark">?</span>;
+<a href=#772 id=772 data-nosnippet>772</a>            file
+<a href=#773 id=773 data-nosnippet>773</a>        }
+<a href=#774 id=774 data-nosnippet>774</a>        <span class="prelude-val">None </span>=&gt; fs::OpenOptions::new().append(<span class="bool-val">true</span>).open(path)<span class="question-mark">?</span>,
+<a href=#775 id=775 data-nosnippet>775</a>    };
+<a href=#776 id=776 data-nosnippet>776</a>    <span class="macro">writeln!</span>(file, <span class="string">"{}"</span>, LeanFile::Proof(def_id.resolved_id()).import(genv))
+<a href=#777 id=777 data-nosnippet>777</a>}
+<a href=#778 id=778 data-nosnippet>778</a>
+<a href=#779 id=779 data-nosnippet>779</a><span class="doccomment">/// We need to both hyperlink the proof (so users can easily jump to it)
+<a href=#780 id=780 data-nosnippet>780</a>/// and record the proof in `Basic.lean` (so that it gets checked by `lake build`),
+<a href=#781 id=781 data-nosnippet>781</a>/// regardless of whether the proof was cached.
+<a href=#782 id=782 data-nosnippet>782</a></span><span class="kw">pub fn </span>log_proof(genv: GlobalEnv, def_id: MaybeExternId) -&gt; <span class="prelude-ty">Result</span>&lt;(), ErrorGuaranteed&gt; {
+<a href=#783 id=783 data-nosnippet>783</a>    hyperlink_proof(genv, def_id);
+<a href=#784 id=784 data-nosnippet>784</a>    record_proof(genv, def_id)
+<a href=#785 id=785 data-nosnippet>785</a>        .map_err(|<span class="kw">_</span>| {
+<a href=#786 id=786 data-nosnippet>786</a>            <span class="kw">let </span>name = genv
+<a href=#787 id=787 data-nosnippet>787</a>                .tcx()
+<a href=#788 id=788 data-nosnippet>788</a>                .def_path(def_id.resolved_id())
+<a href=#789 id=789 data-nosnippet>789</a>                .to_string_no_crate_verbose();
+<a href=#790 id=790 data-nosnippet>790</a>            <span class="kw">let </span>msg = <span class="macro">format!</span>(<span class="string">"failed to record proof for `{name}`"</span>);
+<a href=#791 id=791 data-nosnippet>791</a>            <span class="kw">let </span>span = genv.tcx().def_span(def_id);
+<a href=#792 id=792 data-nosnippet>792</a>            QueryErr::Emitted(genv.sess().dcx().handle().struct_span_err(span, msg).emit())
+<a href=#793 id=793 data-nosnippet>793</a>        })
+<a href=#794 id=794 data-nosnippet>794</a>        .emit(<span class="kw-2">&amp;</span>genv)<span class="question-mark">?</span>;
+<a href=#795 id=795 data-nosnippet>795</a>    <span class="prelude-val">Ok</span>(())
+<a href=#796 id=796 data-nosnippet>796</a>}
 </code></pre></div></section></main></body></html>
