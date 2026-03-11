@@ -18,6 +18,12 @@ refineck_refine_error =
 refineck_panic_error =
     call to {$callee} may panic: {$reason}
 
+refineck_panic_trace_note =
+    {$caller} calls {$callee} here
+
+refineck_panic_leaf_note =
+    {$callee} may panic: {$reason}
+
 refineck_div_error =
     possible division by zero
 

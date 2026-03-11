@@ -36,6 +36,7 @@ use flux_infer::{
     fixpoint_encoding::{FixQueryCache, SolutionTrace},
     infer::{ConstrReason, SubtypeReason, Tag},
 };
+use flux_opt::{PanicReason, PanicSpec};
 use flux_macros::fluent_messages;
 use flux_middle::{
     FixpointQueryKind,
@@ -229,10 +230,41 @@ fn report_errors(genv: GlobalEnv, errors: Vec<Tag>) -> Result<(), ErrorGuarantee
             ConstrReason::Underflow => genv.sess().emit_err(errors::UnderflowError { span }),
             ConstrReason::Other => genv.sess().emit_err(errors::UnknownError { span }),
             ConstrReason::NoPanic(callee, reason) => {
+                let tcx = genv.tcx();
+                let (trace, leaf) =
+                    if matches!(reason, PanicSpec::MightPanic(PanicReason::Transitive)) {
+                        if let Some((steps, (leaf_def_id, leaf_reason))) =
+                            flux_opt::panic_trace_for(tcx, callee)
+                        {
+                            let mut caller_name = tcx.def_path_debug_str(callee);
+                            let mut notes = Vec::new();
+                            for (next, span) in steps {
+                                let callee_name = tcx.def_path_debug_str(next);
+                                notes.push(errors::PanicTraceNote {
+                                    span,
+                                    caller: caller_name,
+                                    callee: callee_name.clone(),
+                                });
+                                caller_name = callee_name;
+                            }
+                            let leaf_note = errors::PanicLeafNote {
+                                span: tcx.def_span(leaf_def_id),
+                                callee: tcx.def_path_debug_str(leaf_def_id),
+                                reason: format!("{:?}", leaf_reason),
+                            };
+                            (notes, Some(leaf_note))
+                        } else {
+                            (vec![], None)
+                        }
+                    } else {
+                        (vec![], None)
+                    };
                 genv.sess().emit_err(errors::PanicError {
                     span,
-                    callee: genv.tcx().def_path_debug_str(callee),
+                    callee: tcx.def_path_debug_str(callee),
                     reason: format!("{:?}", reason),
+                    trace,
+                    leaf,
                 })
             }
         });
@@ -374,6 +406,24 @@ mod errors {
         pub def_descr: &'static str,
     }
 
+    #[derive(Subdiagnostic)]
+    #[note(refineck_panic_trace_note)]
+    pub(super) struct PanicTraceNote {
+        #[primary_span]
+        pub(super) span: Span,
+        pub(super) caller: String,
+        pub(super) callee: String,
+    }
+
+    #[derive(Subdiagnostic)]
+    #[note(refineck_panic_leaf_note)]
+    pub(super) struct PanicLeafNote {
+        #[primary_span]
+        pub(super) span: Span,
+        pub(super) callee: String,
+        pub(super) reason: String,
+    }
+
     #[derive(Diagnostic)]
     #[diag(refineck_panic_error, code = E0999)]
     pub(super) struct PanicError {
@@ -381,5 +431,9 @@ mod errors {
         pub(super) span: Span,
         pub(super) callee: String,
         pub(super) reason: String,
+        #[subdiagnostic]
+        pub(super) trace: Vec<PanicTraceNote>,
+        #[subdiagnostic]
+        pub(super) leaf: Option<PanicLeafNote>,
     }
 }

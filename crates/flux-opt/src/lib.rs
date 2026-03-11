@@ -3,19 +3,22 @@
 extern crate rustc_hir;
 extern crate rustc_infer;
 extern crate rustc_middle;
+extern crate rustc_span;
 extern crate rustc_trait_selection;
 
 use flux_rustc_bridge::lowering::resolve_call_query;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_hir::{def::DefKind, def_id::DefId};
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::{
     mir::TerminatorKind,
     ty::{TyCtxt, TypingMode},
 };
+use rustc_span::Span;
 use rustc_trait_selection::traits::SelectionContext;
 
-pub type CallGraph = FxHashMap<DefId, Vec<DefId>>;
+/// The call graph maps each function to its callees along with the call-site span.
+pub type CallGraph = FxHashMap<DefId, Vec<(DefId, Span)>>;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum PanicSpec {
@@ -26,6 +29,8 @@ pub enum PanicSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanicReason {
     Unknown,
+    // Transitively panicking means that the function itself has at least one callee chain
+    // that eventually leads to one of the other panic reasons.
     Transitive,
     CannotResolve(CannotResolveReason),
     NotInCallGraph,
@@ -70,6 +75,58 @@ pub fn infer_no_panics(tcx: TyCtxt, root: DefId) -> FxHashMap<DefId, PanicSpec> 
     run_fixpoint(&call_graph, &mut initial_specs);
 
     initial_specs
+}
+
+/// Given a function that is known to transitively panic, returns:
+/// - The chain of intermediate calls: each entry is `(callee, call_site_span)` where
+///   `call_site_span` is the span of the call to `callee` within the previous function.
+/// - The leaf `(DefId, PanicReason)`: the function at the end of the chain and the
+///   reason it panics (always non-Transitive).
+///
+/// Returns `None` if no trace can be computed (e.g. no MIR available for `start`).
+pub fn panic_trace_for(tcx: TyCtxt, start: DefId) -> Option<(Vec<(DefId, Span)>, (DefId, PanicReason))> {
+    if !tcx.is_mir_available(start) {
+        return None;
+    }
+
+    let GraphBuildResult { call_graph, resolution_failures } = build_call_graph(tcx, &[start]);
+
+    let mut initial_specs: FxHashMap<DefId, PanicSpec> = FxHashMap::default();
+    for def_id in call_graph.keys() {
+        if let Some(reason) = resolution_failures.get(def_id) {
+            initial_specs.insert(*def_id, PanicSpec::MightPanic(PanicReason::CannotResolve(*reason)));
+        } else {
+            initial_specs.insert(*def_id, PanicSpec::MightPanic(PanicReason::Unknown));
+        }
+    }
+
+    let witnesses = run_fixpoint(&call_graph, &mut initial_specs);
+
+    // Follow the witness chain from `start`, guarding against cycles.
+    let mut trace = Vec::new();
+    let mut current = start;
+    let mut visited = FxHashSet::default();
+    visited.insert(current);
+    while let Some(&(next, span)) = witnesses.get(&current) {
+        trace.push((next, span));
+        if !visited.insert(next) {
+            break;
+        }
+        current = next;
+    }
+
+    // `current` is now the leaf — the function whose panic reason is non-Transitive.
+    // If it's not in initial_specs, it's a resolution failure callee that was never
+    // added to the call graph; look it up in resolution_failures for the real reason.
+    let leaf_reason = match initial_specs.get(&current) {
+        Some(PanicSpec::MightPanic(reason)) => *reason,
+        _ => resolution_failures
+            .get(&current)
+            .map(|r| PanicReason::CannotResolve(*r))
+            .unwrap_or(PanicReason::Unknown),
+    };
+
+    Some((trace, (current, leaf_reason)))
 }
 
 /// Builds the call graph starting from the root function. If we encounter a call we can't resolve, we add it to the resolution_failures map and keep going.
@@ -120,23 +177,21 @@ fn try_resolve<'tcx>(
     Ok(impl_id)
 }
 
-/// Returns the callees of a function, or an error if we fail to resolve any callees.
-fn get_callees(tcx: &TyCtxt, def_id: DefId) -> Result<Vec<DefId>, CannotResolveReason> {
+/// Returns the callees of a function with their call-site spans, or an error if we fail to resolve any callees.
+fn get_callees(tcx: &TyCtxt, def_id: DefId) -> Result<Vec<(DefId, Span)>, CannotResolveReason> {
     let body = tcx.optimized_mir(def_id);
 
     let mut callees = Vec::new();
     for bb in body.basic_blocks.iter() {
         if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+            let call_span = bb.terminator().source_info.span;
             let ty = func.ty(&body.local_decls, *tcx);
-            // 1. Here, try to resolve the callee to either a method in an impl or a free function.
-            // Otherwise, assume the caller can panic.
-            // We can resolve the callee DefId by constructing a inferctxt from the tyctxt
 
             match ty.kind() {
                 rustc_middle::ty::TyKind::FnDef(def_id, args) => {
                     let Some(_trait_id) = tcx.trait_of_assoc(*def_id) else {
                         // If it's a free function, there's no need to resolve.
-                        callees.push(*def_id);
+                        callees.push((*def_id, call_span));
                         continue;
                     };
 
@@ -149,7 +204,7 @@ fn get_callees(tcx: &TyCtxt, def_id: DefId) -> Result<Vec<DefId>, CannotResolveR
                         ));
                     }
 
-                    callees.push(impl_id);
+                    callees.push((impl_id, call_span));
                 }
                 _ => {
                     // Error case 2: We're trying to reason about something that's not an FnDef.
@@ -201,7 +256,7 @@ fn explore(
     while let Some(f) = worklist.pop() {
         let callees = call_graph.get(&f).unwrap().clone();
 
-        for callee in callees {
+        for (callee, _span) in callees {
             if !call_graph.contains_key(&callee) {
                 if tcx.is_mir_available(callee) {
                     match get_callees(&tcx, callee) {
@@ -222,25 +277,6 @@ fn explore(
                     continue;
                 }
             }
-
-            if !call_graph.contains_key(&callee) {
-                if tcx.is_mir_available(callee) {
-                    match get_callees(&tcx, callee) {
-                        Ok(callees) => {
-                            call_graph.insert(callee, callees);
-                            worklist.push(callee);
-                        }
-                        Err(reason) => {
-                            resolution_failures.insert(callee, reason);
-                        }
-                    }
-                } else {
-                    resolution_failures.insert(
-                        callee,
-                        CannotResolveReason::NoMIRAvailable(callee, tcx.def_kind(callee)),
-                    );
-                }
-            }
         }
     }
 }
@@ -248,7 +284,14 @@ fn explore(
 /// Runs a fixpoint algorithm over the call graph to propagate panic specs.
 /// If all callees are known to not panic, then this function is known to not panic.
 /// If a function has a callee that might panic, then it transitively might panic.
-fn run_fixpoint(call_graph: &CallGraph, fn_to_no_panic: &mut FxHashMap<DefId, PanicSpec>) {
+///
+/// Returns a witness map: for each function marked `Transitive`, the immediate bad callee
+/// and the call-site span that caused it.
+fn run_fixpoint(
+    call_graph: &CallGraph,
+    fn_to_no_panic: &mut FxHashMap<DefId, PanicSpec>,
+) -> FxHashMap<DefId, (DefId, Span)> {
+    let mut witnesses: FxHashMap<DefId, (DefId, Span)> = FxHashMap::default();
     let mut changed = true;
     while changed {
         changed = false;
@@ -273,12 +316,12 @@ fn run_fixpoint(call_graph: &CallGraph, fn_to_no_panic: &mut FxHashMap<DefId, Pa
                 }
             };
 
-            let mut bad_callees = Vec::new();
+            let mut bad_callees: Vec<(DefId, Span)> = Vec::new();
 
-            for callee in callees {
+            for (callee, span) in callees {
                 match fn_to_no_panic.get(callee) {
                     Some(PanicSpec::WillNotPanic) => {}
-                    _ => bad_callees.push(*callee),
+                    _ => bad_callees.push((*callee, *span)),
                 }
             }
 
@@ -291,7 +334,10 @@ fn run_fixpoint(call_graph: &CallGraph, fn_to_no_panic: &mut FxHashMap<DefId, Pa
                 let current_spec = fn_to_no_panic.get_mut(&f).unwrap();
                 changed = true;
                 *current_spec = PanicSpec::MightPanic(PanicReason::Transitive);
+                // Record the first bad callee as the witness for this function.
+                witnesses.entry(f).or_insert(bad_callees[0]);
             }
         }
     }
+    witnesses
 }
