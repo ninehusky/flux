@@ -207,7 +207,7 @@ Make sure that the <code>liquid-fixpoint</code> and <code>z3</code> binaries are
 cd flux
 </code></pre>
 <p>To build the source you need a nightly version of <code>rustc</code>.
-We pin the version using a <a href="https://github.com/flux-rs/flux/blob/main/rust-toolchain">toolchain file</a> (more info <a href="https://rust-lang.github.io/rustup/overrides.html#the-toolchain-file">here</a>).
+We pin the version using a <a href="https://github.com/flux-rs/flux/blob/main/rust-toolchain.toml">toolchain file</a> (more info <a href="https://rust-lang.github.io/rustup/overrides.html#the-toolchain-file">here</a>).
 If you are using <code>rustup</code>, no special action is needed as it should install the correct <code>rustc</code> version and components based on the information on that file.</p>
 <p>Next, run the following to build and install <code>flux</code> binaries</p>
 <pre><code class="language-bash">cargo xtask install
@@ -482,7 +482,7 @@ care about some <em>properties</em> that it may have. For example, we don't
 care that an <code>i32</code> is equal to <code>5</code> or <code>10</code> or <code>n</code> but that it is
 non-negative.</p>
 <div class="table-wrapper"><table><thead><tr><th style="text-align: left"><strong>Type</strong></th><th style="text-align: left"><strong>Meaning</strong></th></tr></thead><tbody>
-<tr><td style="text-align: left"><code>i32{v: 0 &lt;  v}</code></td><td style="text-align: left">The set of <code>i32</code> values that positive</td></tr>
+<tr><td style="text-align: left"><code>i32{v: 0 &lt;  v}</code></td><td style="text-align: left">The set of <code>i32</code> values that are positive</td></tr>
 <tr><td style="text-align: left"><code>i32{v: n &lt;= v}</code></td><td style="text-align: left">The set of <code>i32</code> values greater than or equal to <code>n</code></td></tr>
 </tbody></table>
 </div>
@@ -629,7 +629,7 @@ then <code>i32[2]</code> and finally, the returned type <code>i32[3]</code>.</p>
 <!-- SLIDE -->
 <h2 id="exclusive-ownership-and-loops"><a class="header" href="#exclusive-ownership-and-loops">Exclusive Ownership and Loops</a></h2>
 <p>This exclusive ownership mechanism is at work in the <code>factorial</code> example
-we signed off with <a href="tutorial/./01-introducing-flux.html">previously</a></p>
+we signed off with <a href="tutorial/./01-refinements.html#example-factorial">previously</a></p>
 <pre><pre class="playground"><code class="language-rust  editable">#[flux_rs::spec(fn (n:i32{0 &lt;= n}) -&gt; i32{v:n &lt;= v})]
 pub fn factorial(n: i32) -&gt; i32 {
     let mut i = 0;  // i: i32[0]
@@ -799,7 +799,7 @@ determining that the refinement parameter <code>@n</code> is <code>10</code> and
 hence, that upon return <code>x: i32[11]</code>.</p>
 <pre><pre class="playground"><code class="language-rust  editable">fn test_incr() {
   let mut z = 10;
-  incr_inv(&amp;mut z);
+  incr(&amp;mut z);
   assert(z == 11);
 }</code></pre></pre>
 <!-- SLIDE -->
@@ -2663,7 +2663,7 @@ administrators, members and guests. We might represent these three roles
 using a Rust <code>enum</code>:</p>
 <pre><pre class="playground"><code class="language-rust  editable">#[reflect]
 #[derive(Debug, Clone)]
-pub enum Roles {
+pub enum Role {
     Admin,
     Member,
     Guest,
@@ -2711,7 +2711,7 @@ trait for <code>Role</code> which is what Rust uses to implement <code>==</code>
 comparisons.</p>
 <p><strong>A Refined PartialEq Trait</strong> The Flux standard library refines <code>std</code>‘s
 <code>PartialEq</code> trait with two <em>associated refinements</em> (see
-<a href="tutorial/ch09_traits">this chapter</a>.md) <code>is_eq</code> and <code>is_ne</code> that respectively specify when two
+<a href="tutorial/08-traits.html">this chapter</a>) <code>is_eq</code> and <code>is_ne</code> that respectively specify when two
 values of the type implementing <code>PartialEq</code> are equal or not. The
 <em>methods</em> <code>eq</code> and <code>ne</code> return boolean values <code>v</code> such that the
 predicate <code>is_eq(r1, r2, v)</code> and <code>is_ne(r1, r2, v)</code> hold. By default,
@@ -2737,15 +2737,15 @@ implementations of <code>PartialEq</code>, <em>e.g.</em> for <code>Role</code>, 
 associated refinements to capture exactly when two values are equal or
 not.</p>
 <pre><pre class="playground"><code class="language-rust  editable">#[assoc(
-    fn is_eq(x: Self, y: Rhs, res: bool) -&gt; bool { res &lt;=&gt; (r1 == r2) }
-    fn is_ne(x: Self, y: Rhs, res: bool) -&gt; bool { true }
+    fn is_eq(x: Self, y: Self, res: bool) -&gt; bool { res &lt;=&gt; (x == y) }
+    fn is_ne(x: Self, y: Self, res: bool) -&gt; bool { true }
 )]
 impl PartialEq for Role {
-    #[spec(fn(&amp;Self[@r1], &amp;Self[@r2]) -&gt; bool[r1 == r2]))]
+    #[spec(fn(&amp;Self[@r1], &amp;Self[@r2]) -&gt; bool[r1 == r2])]
     fn eq(&amp;self, other: &amp;Self) -&gt; bool {
         match (self, other) {
             (Role::Admin, Role::Admin) =&gt; true,
-            (Role::User, Role::User) =&gt; true,
+            (Role::Member, Role::Member) =&gt; true,
             (Role::Guest, Role::Guest) =&gt; true,
             _ =&gt; false,
         }
@@ -2825,7 +2825,17 @@ pub struct User {
 <pre><pre class="playground"><code class="language-rust  editable">impl User {
     // fill in the spec
     pub fn new(name: String, role: Role) -&gt; Self {
-        User { name, role  }
+        User { name, role }
+    }
+
+    #[spec(fn(&amp;User[@u]) -&gt; bool[u == Role::Admin])]
+    pub fn is_admin(&amp;self) -&gt; bool {
+        is_admin(&amp;self.role)
+    }
+
+    #[spec(fn(&amp;User[@u]) -&gt; bool[u == Role::Guest])]
+    pub fn is_guest(&amp;self) -&gt; bool {
+        is_guest(&amp;self.role)
     }
 }
 
@@ -2871,6 +2881,10 @@ actions.</p>
   fn read(&amp;self) { /* ... */ }
   #[spec(fn(&amp;Self[@u]) requires permitted(u.role, Permissions::Write))]
   fn write(&amp;self) { /* ... */ }
+  #[spec(fn(&amp;Self[@u]) requires permitted(u.role, Permissions::Configure))]
+  fn configure(&amp;self) { /* ... */ }
+  #[spec(fn(&amp;Self[@u]) requires permitted(u.role, Permissions::Delete))]
+  fn delete(&amp;self) { /* ... */ }
 }</code></pre></pre>
 <p>Flux will allow valid accesses,</p>
 <pre><pre class="playground"><code class="language-rust  editable">fn test_access_ok() {
@@ -2890,7 +2904,7 @@ policy:</p>
 <p>To recap, in this chapter we saw how to use</p>
 <ul>
 <li>
-<p><em>Reflect</em> <code>enum</code>s, <em>e.g.</em> to refer to variants like <code>Role::User</code> in
+<p><em>Reflect</em> <code>enum</code>s, <em>e.g.</em> to refer to variants like <code>Role::Member</code> in
 refinements,</p>
 </li>
 <li>
@@ -5122,7 +5136,7 @@ pub struct S {
 <p>with <code>const</code> generics</p>
 <pre><code class="language-rust noplayground">// Test that const generics in invariants are properly instantiated
 
-use flux_rs::attrs::*;
+use flux_attrs::*;
 
 #[invariant(N &gt; 0)]
 struct S&lt;const N: usize&gt; {}
@@ -5370,7 +5384,7 @@ pub fn is_zero(_: E, x: i32) -&gt; i32 {
     x + 1
 }</code></pre>
 <h3 id="reflecting-enums"><a class="header" href="#reflecting-enums">Reflecting Enums</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[reflect]
 pub enum State {
@@ -5495,7 +5509,7 @@ impl S {
         self.x = 1;
     }
 }</code></pre>
-<pre><code class="language-rust noplayground">use flux_rs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[refined_by(start: T, end: T)]
 pub struct Range&lt;T&gt; {
@@ -5854,7 +5868,7 @@ pub fn mk_date(day: usize, month: usize, year: usize) -&gt; Option&lt;Date&gt; {
     return None;
 }</code></pre>
 <h3 id="let-binders"><a class="header" href="#let-binders"><code>let</code> binders</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 defs! {
     fn times2(x: int) -&gt; int {
@@ -6086,7 +6100,7 @@ pub struct S3&lt;const M: usize&gt; {
     pub s1: S1&lt;M&gt;,
 }</code></pre>
 <h2 id="closures"><a class="header" href="#closures">Closures</a></h2>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[trusted]
 #[spec(fn(c: Option&lt;bool&gt;) -&gt; Option&lt;i32{v:0 &lt;= v}&gt;)]
@@ -6204,9 +6218,9 @@ fn test_also_ok(x: Option&lt;i32&gt;) -&gt; Option&lt;i32&gt; {
     let f = id;
     x.map(f)
 }</code></pre>
-<pre><code class="language-rust noplayground">use flux_rs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
-#[sig(fn(x: i32{x != 0}) -&gt; i32[1/x])]
+#[sig(fn(x: i32{x &gt; 0}) -&gt; i32[1/x])]
 fn div(x: i32) -&gt; i32 {
     1 / x
 }
@@ -6853,7 +6867,7 @@ above type.</p>
 }</code></pre>
 <pre><code class="language-rust noplayground">use std::slice::from_ref;
 
-use flux_rs::extern_spec;
+use flux_attrs::extern_spec;
 
 #[extern_spec]
 #[flux::sig(fn(&amp;T) -&gt; &amp;[T][1])]
@@ -6887,6 +6901,21 @@ impl&lt;T&gt; Option&lt;T&gt; {
     #[sig(fn(Option&lt;T&gt;[true]) -&gt; T)]
     const fn unwrap(self) -&gt; T;
 
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L957
+    #[no_panic]
+    #[spec(fn(Option&lt;T&gt;[true], &amp;str) -&gt; T)]
+    const fn expect(self, msg: &amp;str) -&gt; T;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1025
+    #[no_panic]
+    #[spec(fn(Option&lt;T&gt;[@b], T) -&gt; T)]
+    fn unwrap_or(self, default: T) -&gt; T;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1044
+    #[flux_rs::no_panic_if(F::no_panic())]
+    #[spec(fn(Option&lt;T&gt;[@b], F) -&gt; T where F: FnOnce() -&gt; T)]
+    fn unwrap_or_else&lt;F: FnOnce() -&gt; T&gt;(self, f: F) -&gt; T;
+
     #[sig(fn(&amp;Self[@b]) -&gt; Option&lt;&amp;T&gt;[b])]
     fn as_ref(&amp;self) -&gt; Option&lt;&amp;T&gt;;
 
@@ -6898,6 +6927,53 @@ impl&lt;T&gt; Option&lt;T&gt; {
 
     #[sig(fn(&amp;mut Self[@b]) -&gt; &amp;mut [T][if b { 1 } else { 0 }])]
     fn as_mut_slice(&amp;mut self) -&gt; &amp;mut [T];
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1465
+    #[no_panic]
+    #[spec(fn(Option&lt;T&gt;[@a], Option&lt;U&gt;[@b]) -&gt; Option&lt;U&gt;[a &amp;&amp; b])]
+    fn and&lt;U&gt;(self, optb: Option&lt;U&gt;) -&gt; Option&lt;U&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1581
+    #[no_panic]
+    #[spec(fn(Option&lt;T&gt;[@a], Option&lt;T&gt;[@b]) -&gt; Option&lt;T&gt;[a || b])]
+    fn or(self, optb: Option&lt;T&gt;) -&gt; Option&lt;T&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c6a955468b025dbe3d1de3e8f3e30496d1fb7f40/library/core/src/option.rs#L1309
+    #[no_panic]
+    #[spec(fn(Option&lt;T&gt;[@b], E) -&gt; Result&lt;T, E&gt;[b])]
+    fn ok_or&lt;E&gt;(self, err: E) -&gt; Result&lt;T, E&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c6a955468b025dbe3d1de3e8f3e30496d1fb7f40/library/core/src/option.rs#L1334
+    #[flux_rs::no_panic_if(F::no_panic())]
+    #[spec(fn(Option&lt;T&gt;[@b], F) -&gt; Result&lt;T, E&gt;[b] where F: FnOnce() -&gt; E)]
+    fn ok_or_else&lt;E, F: FnOnce() -&gt; E&gt;(self, err: F) -&gt; Result&lt;T, E&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c6a955468b025dbe3d1de3e8f3e30496d1fb7f40/library/core/src/option.rs#L1504
+    #[flux_rs::no_panic_if(F::no_panic())]
+    #[spec(fn(Option&lt;T&gt;[@b], F) -&gt; Option&lt;U&gt;{s: s =&gt; b} where F: FnOnce(T) -&gt; Option&lt;U&gt;)]
+    fn and_then&lt;U, F: FnOnce(T) -&gt; Option&lt;U&gt;&gt;(self, f: F) -&gt; Option&lt;U&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c6a955468b025dbe3d1de3e8f3e30496d1fb7f40/library/core/src/option.rs#L1783
+    #[no_panic]
+    #[spec(fn(self: &amp;mut Option&lt;T&gt;[@b]) -&gt; Option&lt;T&gt;[b]
+           ensures self: Option&lt;T&gt;[false])]
+    const fn take(&amp;mut self) -&gt; Option&lt;T&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c6a955468b025dbe3d1de3e8f3e30496d1fb7f40/library/core/src/option.rs#L1841
+    #[no_panic]
+    #[spec(fn(self: &amp;mut Option&lt;T&gt;[@b], T) -&gt; Option&lt;T&gt;[b]
+           ensures self: Option&lt;T&gt;[true])]
+    const fn replace(&amp;mut self, value: T) -&gt; Option&lt;T&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1160
+    #[flux_rs::no_panic_if(F::no_panic())]
+    #[spec(fn(Option&lt;T&gt;[@b], F) -&gt; Option&lt;U&gt;[b] where F: FnOnce(T) -&gt; U)]
+    fn map&lt;U, F: FnOnce(T) -&gt; U&gt;(self, f: F) -&gt; Option&lt;U&gt;;
+
+    /// Core impl: https://github.com/rust-lang/rust/blob/c871d09d1cc32a649f4c5177bb819646260ed120/library/core/src/option.rs#L1224
+    #[flux_rs::no_panic_if(F::no_panic())]
+    #[spec(fn(Option&lt;T&gt;[@b], U, F) -&gt; U where F: FnOnce(T) -&gt; U)]
+    fn map_or&lt;U, F: FnOnce(T) -&gt; U&gt;(self, default: U, f: F) -&gt; U;
 }</code></pre>
 <pre><code class="language-rust noplayground">use flux_rs::{assert, attrs::*};
 
@@ -7016,7 +7092,7 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
 <h3 id="extern-structs"><a class="header" href="#extern-structs">Extern Structs</a></h3>
 <p>Here is an example of refining an extern struct</p>
-<pre><code class="language-rust noplayground">use flux_rs::extern_spec;
+<pre><code class="language-rust noplayground">use flux_attrs::extern_spec;
 
 #[extern_spec(std::string)]
 #[flux::refined_by(len: int)]
@@ -7030,7 +7106,7 @@ fn test_string_len_2(s: String) {
     expect_string_len_3(s); //~ ERROR refinement type
 }</code></pre>
 <p>Here's a longer example of refining an extern <code>struct</code> as well as an <code>impl</code></p>
-<pre><code class="language-rust noplayground">use flux_rs::extern_spec;
+<pre><code class="language-rust noplayground">use flux_attrs::extern_spec;
 
 #[extern_spec]
 #[flux::refined_by(len: int)]
@@ -7128,7 +7204,7 @@ of writing <code>fn len(&amp;self) -&gt; usize;</code>, you need to write <code>
 they were refined.</p>
 <pre><code class="language-rust noplayground">// Testing we can add external specs to "transparent" structs.
 
-use flux_rs::extern_spec;
+use flux_attrs::extern_spec;
 
 #[extern_spec(std::ops)]
 #[refined_by(start: Idx, end: Idx)]
@@ -7158,7 +7234,7 @@ fn test00() {
 
 use std::slice::Iter;
 
-use flux_rs::*;
+use flux_attrs::*;
 
 #[extern_spec]
 #[refined_by(len: int)]
@@ -7181,7 +7257,7 @@ fn test00(x: &amp;[i32]) -&gt; &amp;[i32] {
     x.iter().as_slice()
 }</code></pre>
 <h3 id="extern-impls"><a class="header" href="#extern-impls">Extern Impls</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::extern_spec;
+<pre><code class="language-rust noplayground">use flux_attrs::extern_spec;
 
 #[extern_spec]
 #[flux::refined_by(len: int)]
@@ -7240,7 +7316,7 @@ pub fn test_string() {
 extern crate extern_spec_impl01_aux;
 
 use extern_spec_impl01_aux::MyTrait;
-use flux_rs::extern_spec;
+use flux_attrs::extern_spec;
 
 #[extern_spec]
 impl&lt;T&gt; MyTrait for Vec&lt;T&gt; {
@@ -7253,7 +7329,7 @@ pub fn test_ok() -&gt; i32 {
     &lt;Vec&lt;i32&gt; as MyTrait&gt;::foo()
 }</code></pre>
 <h3 id="extern-traits"><a class="header" href="#extern-traits">Extern Traits</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[extern_spec(std::cmp)]
 #[assoc(fn eq_rel(lhs: Self, rhs: Rhs) -&gt; bool)]
@@ -7343,7 +7419,7 @@ fn test(len: i32) {
 <h3 id="basic"><a class="header" href="#basic">Basic</a></h3>
 <pre><code class="language-rust noplayground">#![allow(dead_code)]
 
-use flux_rs::attrs::*;
+use flux_attrs::*;
 
 trait MyTrait {
     #![reft(fn f(x: int) -&gt; int)]
@@ -7366,7 +7442,7 @@ fn test01() {
 <h3 id="check-subtyping-at-impl"><a class="header" href="#check-subtyping-at-impl">Check Subtyping at Impl</a></h3>
 <pre><code class="language-rust noplayground">// test that implementations with extra const generics work as expected
 
-use flux_rs::attrs::*;
+use flux_attrs::*;
 
 #[reft(fn p(x: int) -&gt; bool)]
 trait MyTrait {
@@ -7385,7 +7461,7 @@ impl&lt;const N: i32&gt; MyTrait for MyStruct&lt;N&gt; {
     }
 }</code></pre>
 <h3 id="default"><a class="header" href="#default">Default</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 pub trait MyTrait {
     #![reft(fn f(x: int) -&gt; int { x + 1 })]
@@ -7424,7 +7500,7 @@ pub fn test2() -&gt; i32 {
     2
 }</code></pre>
 <h3 id="use-in-extern-spec"><a class="header" href="#use-in-extern-spec">Use in Extern Spec</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[extern_spec(std::cmp)]
 #[assoc(fn eq_rel(lhs: Self, rhs: Rhs) -&gt; bool)]
@@ -7580,7 +7656,7 @@ pub fn test_enumer4(slice: &amp;[usize]) {
     }
 }</code></pre>
 <h3 id="associated-types"><a class="header" href="#associated-types">Associated Types</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 trait MyTrait {
     #![reft(fn f(x: int) -&gt; int)]
@@ -7601,7 +7677,7 @@ fn test01() {
 <pre><code class="language-rust noplayground">// Testing that we properly map generics in trait's default associated refinement
 // body into the impl.
 
-use flux_rs::attrs::*;
+use flux_attrs::*;
 
 trait MyTrait {
     #![reft(fn p(x: Self) -&gt; bool { true })]
@@ -7624,7 +7700,7 @@ struct S&lt;T&gt; {
     f: T,
 }</code></pre>
 <h3 id="refined-associated-types-1"><a class="header" href="#refined-associated-types-1">Refined Associated Types</a></h3>
-<pre><code class="language-rust noplayground">use flux_rs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 #[assoc(fn can_fit(self: Self, animal: Self::Animal) -&gt; bool)]
 trait Barn {
@@ -7940,7 +8016,7 @@ const _: () = ();</code></pre>
 <p><strong>Traits</strong></p>
 <pre><code class="language-rust noplayground">#![allow(dead_code)]
 
-use flux_rs::attrs::*;
+use flux_attrs::*;
 
 trait MyTrait {
     fn baz(&amp;self) -&gt; usize;
@@ -7982,7 +8058,7 @@ fn test01() {
 }]
 const _: () = ();</code></pre>
 <p><strong>Inherent Impls</strong></p>
-<pre><code class="language-rust noplayground">use flux_rs::attrs::*;
+<pre><code class="language-rust noplayground">use flux_attrs::*;
 
 pub enum Nat {
     Zero,
