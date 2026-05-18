@@ -6,7 +6,11 @@ extern crate rustc_middle;
 extern crate rustc_span;
 extern crate rustc_trait_selection;
 
-use std::{io, path::Path};
+use std::{
+    io,
+    panic::{AssertUnwindSafe, catch_unwind},
+    path::Path,
+};
 
 use flux_rustc_bridge::lowering::resolve_call_query;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -470,7 +474,29 @@ pub fn dump_call_graph(tcx: TyCtxt, crate_name: &str, out_path: &Path) -> io::Re
         let caller_def_id = local_id.to_def_id();
         let caller_path = tcx.def_path_str(caller_def_id);
 
-        let analysis = analyze_callees(&tcx, caller_def_id);
+        // Per-fn `catch_unwind`: rustc trait-selection can ICE on some bodies
+        // (e.g. const-trait bounds with bound vars). Don't let one bad function
+        // sink the whole crate's dump — record the panic as an unresolved entry
+        // and keep going.
+        let analysis = match catch_unwind(AssertUnwindSafe(|| analyze_callees(&tcx, caller_def_id)))
+        {
+            Ok(a) => a,
+            Err(payload) => {
+                let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
+                    (*s).to_string()
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "<non-string panic payload>".to_string()
+                };
+                unresolved.push(json!({
+                    "caller": caller_path,
+                    "site": format_span(tcx, tcx.def_span(caller_def_id)),
+                    "reason": format!("AnalyzerPanic({msg})"),
+                }));
+                continue;
+            }
+        };
 
         for (callee, span, edge_kind) in analysis.edges {
             edges.push(json!({
