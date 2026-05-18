@@ -74,6 +74,10 @@ pub fn cache_path() -> Option<&'static Path> {
     FLAGS.cache.as_deref()
 }
 
+pub fn emit_callgraph_path() -> Option<&'static Path> {
+    FLAGS.emit_callgraph.as_deref()
+}
+
 pub fn include_pattern() -> Option<&'static IncludePattern> {
     FLAGS.include.as_ref()
 }

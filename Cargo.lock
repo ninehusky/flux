@@ -533,6 +533,7 @@ dependencies = [
  "flux-macros",
  "flux-metadata",
  "flux-middle",
+ "flux-opt",
  "flux-refineck",
  "flux-rustc-bridge",
  "flux-syntax",

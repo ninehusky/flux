@@ -6,6 +6,8 @@ extern crate rustc_middle;
 extern crate rustc_span;
 extern crate rustc_trait_selection;
 
+use std::{io, path::Path};
+
 use flux_rustc_bridge::lowering::resolve_call_query;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_hir::{def::DefKind, def_id::DefId};
@@ -14,7 +16,7 @@ use rustc_middle::{
     mir::TerminatorKind,
     ty::{TyCtxt, TypingMode},
 };
-use rustc_span::Span;
+use rustc_span::{FileName, Span};
 use rustc_trait_selection::traits::SelectionContext;
 
 /// The call graph maps each function to its callees along with the call-site span.
@@ -340,4 +342,166 @@ fn run_fixpoint(
         }
     }
     witnesses
+}
+
+/// Classification of a single call-site edge for the per-crate callgraph dump.
+#[derive(Debug, Clone, Copy)]
+enum DumpEdgeKind {
+    /// A direct call to a free function (no trait dispatch).
+    Direct,
+    /// A trait method call that resolved to a concrete impl `DefId`.
+    TraitDispatchResolved,
+}
+
+impl DumpEdgeKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            DumpEdgeKind::Direct => "direct",
+            DumpEdgeKind::TraitDispatchResolved => "trait_dispatch_resolved",
+        }
+    }
+}
+
+struct CallSiteAnalysis {
+    edges: Vec<(DefId, Span, DumpEdgeKind)>,
+    unresolved: Vec<(Span, CannotResolveReason)>,
+}
+
+/// Like [`get_callees`] but records per-call-site resolution failures instead of
+/// short-circuiting on the first failure. Intended for the callgraph dump where
+/// we want as much information as possible per function.
+fn analyze_callees(tcx: &TyCtxt, def_id: DefId) -> CallSiteAnalysis {
+    let body = tcx.optimized_mir(def_id);
+    let mut edges = Vec::new();
+    let mut unresolved = Vec::new();
+
+    for bb in body.basic_blocks.iter() {
+        let TerminatorKind::Call { func, .. } = &bb.terminator().kind else { continue };
+        let call_span = bb.terminator().source_info.span;
+        let ty = func.ty(&body.local_decls, *tcx);
+
+        match ty.kind() {
+            rustc_middle::ty::TyKind::FnDef(callee_def_id, args) => {
+                if tcx.trait_of_assoc(*callee_def_id).is_none() {
+                    edges.push((*callee_def_id, call_span, DumpEdgeKind::Direct));
+                    continue;
+                }
+                match try_resolve(tcx, *callee_def_id, args) {
+                    Ok(impl_id) => {
+                        edges.push((impl_id, call_span, DumpEdgeKind::TraitDispatchResolved));
+                    }
+                    Err(reason) => unresolved.push((call_span, reason)),
+                }
+            }
+            _ => unresolved.push((call_span, CannotResolveReason::NotFnDef(def_id))),
+        }
+    }
+
+    CallSiteAnalysis { edges, unresolved }
+}
+
+fn format_span(tcx: TyCtxt, span: Span) -> String {
+    let sm = tcx.sess.source_map();
+    let loc = sm.lookup_char_pos(span.lo());
+    let FileName::Real(real) = &loc.file.name else {
+        return format!("<unknown>:{}", loc.line);
+    };
+    let p = real.local_path_if_available();
+    let path = if p.is_absolute() {
+        let working_dir = tcx.sess.opts.working_dir.local_path_if_available();
+        p.strip_prefix(working_dir).unwrap_or(p)
+    } else {
+        p
+    };
+    format!("{}:{}", path.display(), loc.line)
+}
+
+fn cannot_resolve_reason_str(tcx: TyCtxt, reason: CannotResolveReason) -> String {
+    match reason {
+        CannotResolveReason::NoMIRAvailable(def_id, _) => {
+            format!("NoMIRAvailable({})", tcx.def_path_str(def_id))
+        }
+        CannotResolveReason::UnresolvedTraitMethod(def_id) => {
+            format!("UnresolvedTraitMethod({})", tcx.def_path_str(def_id))
+        }
+        CannotResolveReason::NotFnDef(def_id) => {
+            format!("NotFnDef({})", tcx.def_path_str(def_id))
+        }
+    }
+}
+
+/// Emit a per-crate call graph as JSON. The output schema is:
+///
+/// ```json
+/// {
+///   "crate": "<crate name>",
+///   "edges": [
+///     { "caller": "<def_path_str>",
+///       "callee": "<def_path_str>",
+///       "span":   "<rel/path.rs:LINE>",
+///       "edge_kind": "direct" | "trait_dispatch_resolved" }
+///   ],
+///   "unresolved": [
+///     { "caller": "<def_path_str>",
+///       "site":   "<rel/path.rs:LINE>",
+///       "reason": "<CannotResolveReason debug>" }
+///   ]
+/// }
+/// ```
+///
+/// Edges originate at functions defined in the current crate. Callees may live in
+/// any crate; the workspace-wide aggregation step is responsible for stitching
+/// per-crate JSONs together.
+pub fn dump_call_graph(tcx: TyCtxt, crate_name: &str, out_path: &Path) -> io::Result<()> {
+    use serde_json::json;
+
+    let mut edges = Vec::new();
+    let mut unresolved = Vec::new();
+
+    for local_id in tcx.iter_local_def_id() {
+        let kind = tcx.def_kind(local_id);
+        if !matches!(kind, DefKind::Fn | DefKind::AssocFn | DefKind::Closure) {
+            continue;
+        }
+        if !tcx.is_mir_available(local_id) {
+            continue;
+        }
+
+        let caller_def_id = local_id.to_def_id();
+        let caller_path = tcx.def_path_str(caller_def_id);
+
+        let analysis = analyze_callees(&tcx, caller_def_id);
+
+        for (callee, span, edge_kind) in analysis.edges {
+            edges.push(json!({
+                "caller": caller_path,
+                "callee": tcx.def_path_str(callee),
+                "span": format_span(tcx, span),
+                "edge_kind": edge_kind.as_str(),
+            }));
+        }
+        for (span, reason) in analysis.unresolved {
+            unresolved.push(json!({
+                "caller": caller_path,
+                "site": format_span(tcx, span),
+                "reason": cannot_resolve_reason_str(tcx, reason),
+            }));
+        }
+    }
+
+    let payload = json!({
+        "crate": crate_name,
+        "edges": edges,
+        "unresolved": unresolved,
+    });
+
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let file = std::fs::File::create(out_path)?;
+    serde_json::to_writer_pretty(file, &payload).map_err(io::Error::other)?;
+    Ok(())
 }

@@ -50,11 +50,21 @@ impl Callbacks for FluxCallbacks {
 
     fn after_analysis(&mut self, compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
         self.verify(compiler, tcx);
+        self.maybe_dump_call_graph(tcx);
         if config::full_compilation() { Compilation::Continue } else { Compilation::Stop }
     }
 }
 
 impl FluxCallbacks {
+    fn maybe_dump_call_graph(&self, tcx: TyCtxt<'_>) {
+        let Some(out_path) = config::emit_callgraph_path() else { return };
+        let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
+        if let Err(err) = flux_opt::dump_call_graph(tcx, &crate_name, out_path) {
+            tcx.dcx()
+                .err(format!("failed to emit callgraph to {}: {err}", out_path.display()));
+        }
+    }
+
     fn verify(&self, compiler: &Compiler, tcx: TyCtxt<'_>) {
         if compiler.sess.dcx().has_errors().is_some() {
             return;

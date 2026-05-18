@@ -24,6 +24,8 @@ pub struct Flags {
     pub pointer_width: PointerWidth,
     /// If present switches on query caching and saves the cache in the provided path
     pub cache: Option<PathBuf>,
+    /// If present, dump a per-crate call graph JSON to the provided path.
+    pub emit_callgraph: Option<PathBuf>,
     /// Compute statistics about number and size of annotations. Dumps file to [`Self::log_dir`]
     pub annots: bool,
     /// Print statistics about time taken to analyze each fuction. Also dumps a file with the raw
@@ -86,6 +88,7 @@ impl Default for Flags {
             pointer_width: PointerWidth::default(),
             include: None,
             cache: None,
+            emit_callgraph: None,
             check_overflow: OverflowMode::default(),
             allow_raw_deref: RawDerefMode::default(),
             scrape_quals: false,
@@ -131,6 +134,7 @@ pub(crate) static FLAGS: LazyLock<Flags> = LazyLock::new(|| {
             "timings" => parse_bool(&mut flags.timings, value),
             "summary" => parse_bool(&mut flags.summary, value),
             "cache" => parse_opt_path_buf(&mut flags.cache, value),
+            "emit-callgraph" => parse_opt_path_buf(&mut flags.emit_callgraph, value),
             "include" => parse_opt_include(&mut includes, value),
             "verify" => parse_bool(&mut flags.verify, value),
             "full-compilation" => parse_bool(&mut flags.full_compilation, value),
