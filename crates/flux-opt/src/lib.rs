@@ -3,8 +3,10 @@
 extern crate rustc_data_structures;
 extern crate rustc_hir;
 extern crate rustc_middle;
+extern crate rustc_span;
 
 mod call_graph;
+mod dump;
 
 use std::collections::VecDeque;
 
@@ -30,6 +32,7 @@ pub fn infer_no_panics(
     external_spec: impl Fn(DefId) -> PanicSpec,
 ) -> UnordMap<DefId, PanicSpec> {
     let graph = call_graph::build_call_graph(genv);
+    dump::dump_call_graph(genv, &graph);
     run_fixpoint(&graph, external_spec)
 }
 

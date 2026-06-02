@@ -58,6 +58,9 @@ pub struct Flags {
     pub dump_fhir: bool,
     /// Saves the the `fhir` (debugging)
     pub dump_rty: bool,
+    /// Dumps the no-panic inference call graph to `<crate>-call-graph.json` in [`Self::log_dir`]
+    /// (debugging). One file per analyzed crate; sibling crates appear as `ExternalCrate` stubs.
+    pub dump_call_graph: bool,
     /// Optimistically keeps running flux even after errors are found to get as many errors as possible
     pub catch_bugs: bool,
     /// Whether verification for the current crate is enabled. If false (the default), `flux-driver`
@@ -91,6 +94,7 @@ impl Default for Flags {
             dump_checker_trace: None,
             dump_fhir: false,
             dump_rty: false,
+            dump_call_graph: false,
             catch_bugs: false,
             pointer_width: PointerWidth::default(),
             include: None,
@@ -134,6 +138,7 @@ pub(crate) static FLAGS: LazyLock<Flags> = LazyLock::new(|| {
             "dump-checker-trace" => parse_opt_level(&mut flags.dump_checker_trace, value),
             "dump-fhir" => parse_bool(&mut flags.dump_fhir, value),
             "dump-rty" => parse_bool(&mut flags.dump_rty, value),
+            "dump-call-graph" => parse_bool(&mut flags.dump_call_graph, value),
             "catch-bugs" => parse_bool(&mut flags.catch_bugs, value),
             "pointer-width" => parse_pointer_width(&mut flags.pointer_width, value),
             "check-overflow" => parse_overflow(&mut flags.check_overflow, value),

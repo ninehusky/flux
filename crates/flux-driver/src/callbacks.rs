@@ -76,6 +76,19 @@ impl FluxCallbacks {
         let cstore = CStore::load(tcx, &sess);
         let arena = fhir::Arena::new();
         GlobalEnv::enter(tcx, &sess, Box::new(cstore), &arena, providers, |genv| {
+            // Dump-only mode: with `-Fdump-call-graph` we want the structural call
+            // graph for every crate, NOT verification. Build + dump the graph (by
+            // forcing `inferred_no_panic`) and emit metadata so dependent crates can
+            // still compile, then skip `check_crate`. Running verification here would
+            // raise errors that fail the build and starve everything downstream of a
+            // failing crate (e.g. `kernel`) of the metadata it needs to compile and
+            // dump in turn.
+            if config::dump_call_graph() {
+                genv.inferred_no_panic_crate(LOCAL_CRATE);
+                encode_and_save_metadata(genv);
+                lean_encoding::finalize(genv).unwrap_or(());
+                return;
+            }
             let result = metrics::time_it(TimingKind::Total, || check_crate(genv));
             if result.is_ok() {
                 encode_and_save_metadata(genv);

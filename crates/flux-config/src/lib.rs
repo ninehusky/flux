@@ -38,6 +38,10 @@ pub fn dump_rty() -> bool {
     FLAGS.dump_rty
 }
 
+pub fn dump_call_graph() -> bool {
+    FLAGS.dump_call_graph
+}
+
 pub fn pointer_width() -> PointerWidth {
     FLAGS.pointer_width
 }
