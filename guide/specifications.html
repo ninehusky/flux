@@ -30,6 +30,8 @@
         <!-- Custom theme stylesheets -->
         <link rel="stylesheet" href="../flux_theme/flux.css">
 
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
 
         <!-- Provide site root and default themes to javascript -->
         <script>
@@ -755,7 +757,7 @@ pub fn pop2&lt;T&gt;(vec: &amp;mut Vec&lt;T&gt;) -&gt; Option&lt;(T, T)&gt; {
 <p><strong>Associated Refinements</strong> for indexing</p>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -790,16 +792,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -813,7 +823,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <pre><code class="language-rust noplayground">#![feature(allocator_api)]
 
 use std::ops::Index;
@@ -2882,7 +2907,7 @@ pub fn test_safe_div() {
 <h3 id="vec"><a class="header" href="#vec">Vec</a></h3>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -2917,16 +2942,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -2940,7 +2973,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <h3 id="extern-structs"><a class="header" href="#extern-structs">Extern Structs</a></h3>
 <p>Here is an example of refining an extern struct</p>
 <pre><code class="language-rust noplayground">use flux_attrs::extern_spec;
@@ -3382,7 +3430,7 @@ fn test01(x: MyInt, y: MyInt) -&gt; bool {
 }</code></pre>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -3417,16 +3465,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -3440,7 +3496,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <pre><code class="language-rust noplayground">mod adapters;
 #[cfg(flux)]
 mod range;
@@ -3741,6 +3812,13 @@ pub fn test6(c: char) {
     flux_rs::assert(c &lt;= 0x10FFFF); // (0)
     let c = c | 1;
     flux_rs::assert(c &lt;= 0x10FFFF); // (1)
+}
+
+#[spec(fn (b:bool) -&gt; usize{v: v &lt;= 7})]
+pub fn test7(b: bool) -&gt; usize {
+    let n: usize = 10;
+    let m = if b { n &amp; 7 } else { 6 };
+    m
 }</code></pre>
 <h2 id="casting-sorts"><a class="header" href="#casting-sorts">Casting Sorts</a></h2>
 <p>You can convert refinements of different sorts -- e.g. <code>int</code> to <code>char</code> or <code>int</code> to <code>bool</code> --

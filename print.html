@@ -31,6 +31,8 @@
         <!-- Custom theme stylesheets -->
         <link rel="stylesheet" href="flux_theme/flux.css">
 
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
 
         <!-- Provide site root and default themes to javascript -->
         <script>
@@ -182,6 +184,9 @@ classes of run-time problems.</p>
 to learn how you can use Flux on your Rust code.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="installing-and-running-flux"><a class="header" href="#installing-and-running-flux">Installing and Running Flux</a></h1>
 <p>You can install and then run Flux either on a single file or on an entire crate.</p>
+<h2 id="quick-install-linux--macos"><a class="header" href="#quick-install-linux--macos">Quick Install (Linux / macOS)</a></h2>
+<pre><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/flux-rs/flux/main/install.sh | bash
+</code></pre>
 <h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
 <ul>
 <li>
@@ -215,19 +220,44 @@ If you are using <code>rustup</code>, no special action is needed as it should i
 <p>This will install two binaries <code>flux</code> and <code>cargo-flux</code> in your cargo home. These two binaries should be used
 respectively to run Flux on either a single file or on a project using cargo. The installation process will
 also copy some files to <code>$HOME/.flux</code>.</p>
-<p>In order to use Flux refinement attributes in a Cargo project, you will need to add the
-following to your Cargo.toml</p>
+<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
+<p>The most common way to use Flux is to run it on a Cargo package.
+This allows you to check an entire crate in one command, <code>cargo flux</code>.</p>
+<h3 id="step-1-install-flux"><a class="header" href="#step-1-install-flux">Step 1: Install Flux</a></h3>
+<p><a href="guide/install.html#install">Install Flux</a> as described above.</p>
+<h3 id="step-2-enable-flux-for-the-package"><a class="header" href="#step-2-enable-flux-for-the-package">Step 2: Enable Flux for the Package</a></h3>
+<p>By default, Flux won't verify a package unless it's explicitly enabled in the manifest.
+To do so add the following to <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[package.metadata.flux]
+enabled = true
+</code></pre>
+<p>Now you can run <code>cargo flux</code> to check the package.</p>
+<h3 id="step-3-enable-refinement-attributes"><a class="header" href="#step-3-enable-refinement-attributes">Step 3: Enable Refinement Attributes</a></h3>
+<p>In step 2, you will likely get some refinement errors, and to remove
+those you will need to add some refinement annotations to your code.
+To do so, add the following to your <code>Cargo.toml</code>, which
+adds the procedural macros Flux uses to your project</p>
 <pre><code class="language-toml">[dependencies]
 flux-rs = { git  = "https://github.com/flux-rs/flux.git" }
 </code></pre>
-<p>This will add the procedural macros Flux uses to your project; it is not a substitute for installing Flux, which must still be done.</p>
+<p>Then, import attributes from <code>flux_rs</code> and add the appropriate refinement annotations.</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use flux_rs::attrs::*;
+
+#[spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
+fn inc(x: i32) -&gt; i32 {
+    x - 1
+}
+<span class="boring">}</span></code></pre></pre>
 <h2 id="running-on-a-file-flux"><a class="header" href="#running-on-a-file-flux">Running on a File: <code>flux</code></a></h2>
 <p>You can use <code>flux</code> as you would use <code>rustc</code>.
 For example, the following command checks the file <code>test.rs</code>.</p>
 <pre><code class="language-bash">flux path/to/test.rs
 </code></pre>
 <p>The flux binary accepts the same flags as <code>rustc</code>.
-You could for example check a file as a library instead of a binary like so</p>
+You could for example check a file as a library
+instead of a binary like so</p>
 <pre><code class="language-bash">flux --crate-type=lib path/to/test.rs
 </code></pre>
 <h3 id="refinement-annotations-on-a-file"><a class="header" href="#refinement-annotations-on-a-file">Refinement Annotations on a File</a></h3>
@@ -236,31 +266,6 @@ You could for example check a file as a library instead of a binary like so</p>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[flux::spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
-fn inc(x: i32) -&gt; i32 {
-    x - 1
-}
-<span class="boring">}</span></code></pre></pre>
-<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
-<p>See this an
-Flux is integrated with <code>cargo</code> and can be invoked in a package as follows:</p>
-<pre><code class="language-bash">cargo flux
-</code></pre>
-<p>By default, Flux won't verify a package unless it's explicitly enabled in the manifest.
-To do so add the following to <code>Cargo.toml</code>:</p>
-<pre><code class="language-toml">[package.metadata.flux]
-enabled = true
-</code></pre>
-<h3 id="refinement-annotations-on-a-cargo-projects"><a class="header" href="#refinement-annotations-on-a-cargo-projects">Refinement Annotations on a Cargo Projects</a></h3>
-<p>Adding refinement annotations to cargo projects is simple. You can add <code>flux-rs</code> as a dependency in <code>Cargo.toml</code></p>
-<pre><code class="language-toml">[dependencies]
-flux-rs = { git  = "https://github.com/flux-rs/flux.git" }
-</code></pre>
-<p>Then, import attributes from <code>flux_rs</code> and add the appropriate refinement annoations.</p>
-<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use flux_rs::attrs::*;
-
-#[spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
 fn inc(x: i32) -&gt; i32 {
     x - 1
 }
@@ -340,11 +345,16 @@ for all crates, including dependencies. This behavior is likely to change in the
 out what configurations make sense to have per package and which should only affect the current execution
 of <code>cargo flux</code>.</p>
 <p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html</a>.</p>
-<h3 id="fluxflags-environement-variable"><a class="header" href="#fluxflags-environement-variable"><code>FLUXFLAGS</code> Environement Variable</a></h3>
+<h3 id="fluxflags-environment-variable"><a class="header" href="#fluxflags-environment-variable"><code>FLUXFLAGS</code> Environment Variable</a></h3>
 <p>When running <code>cargo flux</code>, flags defined in <code>FLUXFLAGS</code> will be passed to all <code>flux</code> invocations,
 for example, to print timing information for all crates checked by Flux:</p>
 <pre><code class="language-console">FLUXFLAGS="-Ftimings" cargo flux
 </code></pre>
+<h3 id="verbose-flag"><a class="header" href="#verbose-flag">Verbose Flag</a></h3>
+<p>One particularly useful flag is</p>
+<pre><code class="language-console">FLUXFLAGS="-Fverbose" cargo flux
+</code></pre>
+<p>This will make flux print out a log of what it is upto, e.g. the name of the last function checked. This is helpful, e.g. if flux ICEs (hits an internal error), so you can see <em>which</em> function's code caused the issue, so you might mark it as <code>trusted</code>, so flux can skip checking its body, and hence, live to fight another day...</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="about-flux"><a class="header" href="#about-flux">About Flux</a></h1>
 <img src="img/logo-wide.svg" class="flux-logo" alt="Flux Logo">
 <h2 id="team"><a class="header" href="#team">Team</a></h2>
@@ -4043,18 +4053,20 @@ Nielsen’s book <sup class="footnote-reference" id="fr-6-1"><a href="#footnote-
 each output neuron <code>outputs[i]</code> as the <em>weighted sum</em> of its input
 neurons <code>inputs[i]</code>, and return <code>1</code> if that sum plus its <code>bias[i]</code> — a
 threshold — is above zero, and <code>0</code> otherwise.</p>
-<pre><code class="language-math">\mathbf{\text{outputs}}\lbrack i\rbrack ≔ \begin{cases}
+<p>\[
+\mathbf{\text{outputs}}\lbrack i\rbrack ≔ \begin{cases}
 1\text{ if  }\mathbf{\text{weights}}\lbrack i\rbrack \cdot \mathbf{\text{inputs}} + \mathbf{\text{bias}}\lbrack i\rbrack &gt; 0 \\
 0\text{ otherwise }
 \end{cases}
-</code></pre>
+\]</p>
 <p>The discrete “step” function above discontinuously leaps from <code>0</code> to <code>1</code>
 at the threshold, which gets in the way of computing gradients during
 backpropagation. So instead we <em>smooth</em> it out using a <em>sigmoid</em>
-(logistic) function</p>
-<pre><code class="language-math">\sigma(x) ≔ \frac{1}{1 + \exp( - x)}
-</code></pre>
-<p>which transitions gradually from <code>0</code> to <code>1</code> as shown below:</p>
+(logistic) function
+\[
+\sigma(x) ≔ \frac{1}{1 + \exp( - x)}
+\]
+which transitions gradually from <code>0</code> to <code>1</code> as shown below:</p>
 <figure>
 <p><img src="tutorial/../img/sigmoid.png" style="width:61.0%" /></p>
 <figcaption><p>Sigmoid vs. Step Function</p></figcaption>
@@ -4062,9 +4074,10 @@ backpropagation. So instead we <em>smooth</em> it out using a <em>sigmoid</em>
 <p><span id="fig:sigmoid-step"></span></p>
 <p>Thus, when we put the weighted-sum and sigmoid together, we get the
 following formula for computing the i<sup>th</sup> output neuron:</p>
-<pre><code class="language-math">\mathbf{\text{outputs}}\lbrack i\rbrack ≔ \sigma(\mathbf{\text{weights}}\lbrack i\rbrack \cdot \mathbf{\text{inputs}} + \mathbf{\text{bias}}\lbrack i\rbrack)
-</code></pre>
-<p><span id="eq:neural-output"></span></p>
+<p>\[
+\mathbf{\text{outputs}}\lbrack i\rbrack ≔ \sigma(\mathbf{\text{weights}}\lbrack i\rbrack \cdot \mathbf{\text{inputs}} + \mathbf{\text{bias}}\lbrack i\rbrack)
+\]
+<span id="eq:neural-output"></span></p>
 <p><strong>EXERCISE:</strong> Below is the implementation of a function that computes
 the <code>dot_product</code> of two vectors. Can you figure out why Flux is
 complaining and fix the code so it verifies?</p>
@@ -4904,7 +4917,7 @@ pub fn pop2&lt;T&gt;(vec: &amp;mut Vec&lt;T&gt;) -&gt; Option&lt;(T, T)&gt; {
 <p><strong>Associated Refinements</strong> for indexing</p>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -4939,16 +4952,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -4962,7 +4983,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <pre><code class="language-rust noplayground">#![feature(allocator_api)]
 
 use std::ops::Index;
@@ -7031,7 +7067,7 @@ pub fn test_safe_div() {
 <h3 id="vec"><a class="header" href="#vec">Vec</a></h3>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -7066,16 +7102,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -7089,7 +7133,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <h3 id="extern-structs"><a class="header" href="#extern-structs">Extern Structs</a></h3>
 <p>Here is an example of refining an extern struct</p>
 <pre><code class="language-rust noplayground">use flux_attrs::extern_spec;
@@ -7531,7 +7590,7 @@ fn test01(x: MyInt, y: MyInt) -&gt; bool {
 }</code></pre>
 <pre><code class="language-rust noplayground">use std::{
     alloc::{Allocator, Global},
-    ops::{Index, IndexMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
     slice::SliceIndex,
 };
 
@@ -7566,16 +7625,24 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
     fn is_empty(&amp;self) -&gt; bool;
 }
 
+#[extern_spec]
+impl&lt;T: Clone, A: Allocator + Clone&gt; Clone for Vec&lt;T, A&gt; {
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; Vec&lt;T, A&gt;[n])]
+    fn clone(&amp;self) -&gt; Vec&lt;T, A&gt;;
+}
+
 //---------------------------------------------------------------------------------------
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
+    #[assume_parametric(T)]
     #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
@@ -7589,7 +7656,22 @@ impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
 
 #[extern_spec]
 #[assoc(fn with_size(self: Self, n:int) -&gt; bool { self.len == n })]
-impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}</code></pre>
+impl&lt;T&gt; FromIterator&lt;T&gt; for Vec&lt;T&gt; {}
+
+// ---------------------------------------------------------------------------------------
+
+#[extern_spec(std::vec)]
+#[assoc(fn as_deref(v: Self, target: int) -&gt; bool { v.len == target })]
+impl&lt;T, A: Allocator&gt; Deref for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;Self[@v]) -&gt; &amp;[T][v])]
+    fn deref(&amp;self) -&gt; &amp;[T];
+}
+
+#[extern_spec(std::vec)]
+impl&lt;T, A: Allocator&gt; DerefMut for Vec&lt;T, A&gt; {
+    #[sig(fn(self: &amp;mut Self[@v]) -&gt; &amp;mut [T][v])]
+    fn deref_mut(&amp;mut self) -&gt; &amp;mut [T];
+}</code></pre>
 <pre><code class="language-rust noplayground">mod adapters;
 #[cfg(flux)]
 mod range;
@@ -7890,6 +7972,13 @@ pub fn test6(c: char) {
     flux_rs::assert(c &lt;= 0x10FFFF); // (0)
     let c = c | 1;
     flux_rs::assert(c &lt;= 0x10FFFF); // (1)
+}
+
+#[spec(fn (b:bool) -&gt; usize{v: v &lt;= 7})]
+pub fn test7(b: bool) -&gt; usize {
+    let n: usize = 10;
+    let m = if b { n &amp; 7 } else { 6 };
+    m
 }</code></pre>
 <h2 id="casting-sorts"><a class="header" href="#casting-sorts">Casting Sorts</a></h2>
 <p>You can convert refinements of different sorts -- e.g. <code>int</code> to <code>char</code> or <code>int</code> to <code>bool</code> --
@@ -8275,6 +8364,16 @@ test [compile-fail] neg/surface/impl_trait02.rs ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 207 filtered out; finished in 0.09s
 </code></pre>
+<h3 id="test-suites"><a class="header" href="#test-suites">Test Suites</a></h3>
+<p>The test suite is split into two tiers based on what the test requires at compile time.</p>
+<p><strong>Basic tests</strong> (<code>tests/pos/</code> and <code>tests/neg/</code>) only require <code>flux_attrs</code>, the procedural macro
+crate that provides Flux's surface syntax. <strong>Prefer writing tests here whenever possible.</strong>
+A test belongs in the basic suite if it only uses Flux attributes directly, that is, it uses
+<code>flux_attrs::*</code> (or <code>#[flux::*]</code>) without importing <code>flux_rs</code>, <code>flux_core</code>, or <code>flux_alloc</code>.</p>
+<p><strong>Dependency tests</strong> (<code>tests/with_deps/pos/</code> and <code>tests/with_deps/neg/</code>) require the full set of
+precompiled Flux libraries (<code>flux_rs</code>, <code>flux_core</code>, <code>flux_alloc</code>). Only place a test here when it
+genuinely needs one of those libraries, for example, when testing extern specs for
+standard-library types or behaviour that relies on the <code>flux_rs</code> prelude.</p>
 <h2 id="testing-flux-on-a-file"><a class="header" href="#testing-flux-on-a-file">Testing Flux on a File</a></h2>
 <p>When working on Flux, you may want to test your changes by running it against a test file.
 You can use <code>cargo xtask run &lt;input&gt;</code> to run Flux on a single input file.
@@ -8444,7 +8543,9 @@ of the libraries by running:</p>
 
         <script>
         window.addEventListener('load', function() {
-            window.setTimeout(window.print, 100);
+            MathJax.Hub.Register.StartupHook('End', function() {
+                window.setTimeout(window.print, 100);
+            });
         });
         </script>
 

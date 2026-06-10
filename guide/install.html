@@ -30,6 +30,8 @@
         <!-- Custom theme stylesheets -->
         <link rel="stylesheet" href="../flux_theme/flux.css">
 
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
 
         <!-- Provide site root and default themes to javascript -->
         <script>
@@ -157,6 +159,9 @@
                     <main>
                         <h1 id="installing-and-running-flux"><a class="header" href="#installing-and-running-flux">Installing and Running Flux</a></h1>
 <p>You can install and then run Flux either on a single file or on an entire crate.</p>
+<h2 id="quick-install-linux--macos"><a class="header" href="#quick-install-linux--macos">Quick Install (Linux / macOS)</a></h2>
+<pre><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/flux-rs/flux/main/install.sh | bash
+</code></pre>
 <h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
 <ul>
 <li>
@@ -190,19 +195,44 @@ If you are using <code>rustup</code>, no special action is needed as it should i
 <p>This will install two binaries <code>flux</code> and <code>cargo-flux</code> in your cargo home. These two binaries should be used
 respectively to run Flux on either a single file or on a project using cargo. The installation process will
 also copy some files to <code>$HOME/.flux</code>.</p>
-<p>In order to use Flux refinement attributes in a Cargo project, you will need to add the
-following to your Cargo.toml</p>
+<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
+<p>The most common way to use Flux is to run it on a Cargo package.
+This allows you to check an entire crate in one command, <code>cargo flux</code>.</p>
+<h3 id="step-1-install-flux"><a class="header" href="#step-1-install-flux">Step 1: Install Flux</a></h3>
+<p><a href="#install">Install Flux</a> as described above.</p>
+<h3 id="step-2-enable-flux-for-the-package"><a class="header" href="#step-2-enable-flux-for-the-package">Step 2: Enable Flux for the Package</a></h3>
+<p>By default, Flux won't verify a package unless it's explicitly enabled in the manifest.
+To do so add the following to <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[package.metadata.flux]
+enabled = true
+</code></pre>
+<p>Now you can run <code>cargo flux</code> to check the package.</p>
+<h3 id="step-3-enable-refinement-attributes"><a class="header" href="#step-3-enable-refinement-attributes">Step 3: Enable Refinement Attributes</a></h3>
+<p>In step 2, you will likely get some refinement errors, and to remove
+those you will need to add some refinement annotations to your code.
+To do so, add the following to your <code>Cargo.toml</code>, which
+adds the procedural macros Flux uses to your project</p>
 <pre><code class="language-toml">[dependencies]
 flux-rs = { git  = "https://github.com/flux-rs/flux.git" }
 </code></pre>
-<p>This will add the procedural macros Flux uses to your project; it is not a substitute for installing Flux, which must still be done.</p>
+<p>Then, import attributes from <code>flux_rs</code> and add the appropriate refinement annotations.</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use flux_rs::attrs::*;
+
+#[spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
+fn inc(x: i32) -&gt; i32 {
+    x - 1
+}
+<span class="boring">}</span></code></pre></pre>
 <h2 id="running-on-a-file-flux"><a class="header" href="#running-on-a-file-flux">Running on a File: <code>flux</code></a></h2>
 <p>You can use <code>flux</code> as you would use <code>rustc</code>.
 For example, the following command checks the file <code>test.rs</code>.</p>
 <pre><code class="language-bash">flux path/to/test.rs
 </code></pre>
 <p>The flux binary accepts the same flags as <code>rustc</code>.
-You could for example check a file as a library instead of a binary like so</p>
+You could for example check a file as a library
+instead of a binary like so</p>
 <pre><code class="language-bash">flux --crate-type=lib path/to/test.rs
 </code></pre>
 <h3 id="refinement-annotations-on-a-file"><a class="header" href="#refinement-annotations-on-a-file">Refinement Annotations on a File</a></h3>
@@ -211,31 +241,6 @@ You could for example check a file as a library instead of a binary like so</p>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[flux::spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
-fn inc(x: i32) -&gt; i32 {
-    x - 1
-}
-<span class="boring">}</span></code></pre></pre>
-<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
-<p>See this an
-Flux is integrated with <code>cargo</code> and can be invoked in a package as follows:</p>
-<pre><code class="language-bash">cargo flux
-</code></pre>
-<p>By default, Flux won't verify a package unless it's explicitly enabled in the manifest.
-To do so add the following to <code>Cargo.toml</code>:</p>
-<pre><code class="language-toml">[package.metadata.flux]
-enabled = true
-</code></pre>
-<h3 id="refinement-annotations-on-a-cargo-projects"><a class="header" href="#refinement-annotations-on-a-cargo-projects">Refinement Annotations on a Cargo Projects</a></h3>
-<p>Adding refinement annotations to cargo projects is simple. You can add <code>flux-rs</code> as a dependency in <code>Cargo.toml</code></p>
-<pre><code class="language-toml">[dependencies]
-flux-rs = { git  = "https://github.com/flux-rs/flux.git" }
-</code></pre>
-<p>Then, import attributes from <code>flux_rs</code> and add the appropriate refinement annoations.</p>
-<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use flux_rs::attrs::*;
-
-#[spec(fn(x: i32) -&gt; i32{v: x &lt; v})]
 fn inc(x: i32) -&gt; i32 {
     x - 1
 }
@@ -315,11 +320,16 @@ for all crates, including dependencies. This behavior is likely to change in the
 out what configurations make sense to have per package and which should only affect the current execution
 of <code>cargo flux</code>.</p>
 <p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html</a>.</p>
-<h3 id="fluxflags-environement-variable"><a class="header" href="#fluxflags-environement-variable"><code>FLUXFLAGS</code> Environement Variable</a></h3>
+<h3 id="fluxflags-environment-variable"><a class="header" href="#fluxflags-environment-variable"><code>FLUXFLAGS</code> Environment Variable</a></h3>
 <p>When running <code>cargo flux</code>, flags defined in <code>FLUXFLAGS</code> will be passed to all <code>flux</code> invocations,
 for example, to print timing information for all crates checked by Flux:</p>
 <pre><code class="language-console">FLUXFLAGS="-Ftimings" cargo flux
 </code></pre>
+<h3 id="verbose-flag"><a class="header" href="#verbose-flag">Verbose Flag</a></h3>
+<p>One particularly useful flag is</p>
+<pre><code class="language-console">FLUXFLAGS="-Fverbose" cargo flux
+</code></pre>
+<p>This will make flux print out a log of what it is upto, e.g. the name of the last function checked. This is helpful, e.g. if flux ICEs (hits an internal error), so you can see <em>which</em> function's code caused the issue, so you might mark it as <code>trusted</code>, so flux can skip checking its body, and hence, live to fight another day...</p>
 
                     </main>
 

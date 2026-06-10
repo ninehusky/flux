@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CannotResolveReason","PanicReason","PanicSpec"],"fn":["bfs_excluding_sources","build_call_graph","build_full_crate_call_graph","explore","get_callees","infer_no_panics","inverse_call_graph","panic_trace_for","reachable_set","run_fixpoint","try_resolve"],"struct":["GraphBuildResult","ReachableSet"],"type":["CallGraph"]};
+window.SIDEBAR_ITEMS = {"fn":["infer_no_panics","inferred_no_panic","initial_spec","provide","run_fixpoint"],"mod":["call_graph"]};
