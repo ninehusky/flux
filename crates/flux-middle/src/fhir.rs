@@ -26,8 +26,10 @@ use itertools::Itertools;
 use rustc_abi;
 pub use rustc_abi::VariantIdx;
 use rustc_ast::TraitObjectSyntax;
-use rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
-use rustc_hash::FxHashMap;
+use rustc_data_structures::{
+    fx::{FxIndexMap, FxIndexSet},
+    unord::UnordMap,
+};
 pub use rustc_hir::PrimTy;
 use rustc_hir::{
     FnHeader, OwnerId, ParamName, Safety,
@@ -61,6 +63,10 @@ pub struct AttrMap<'fhir> {
     pub attrs: &'fhir [Attr],
     pub qualifiers: &'fhir [FluxLocalDefId],
     pub reveals: &'fhir [FluxDefId],
+    /// The `DefId`s of type params listed in `#[assume_parametric(...)]`. They match
+    /// the `DefId` entries in `generics_of(callee_id)`. These are `DefId`s and not
+    /// `LocalDefId`s such that they are correct for extern specs as well.
+    pub parametric_params: &'fhir [DefId],
 }
 
 impl AttrMap<'_> {
@@ -102,6 +108,10 @@ impl AttrMap<'_> {
 
     pub(crate) fn no_panic(&self) -> bool {
         self.attrs.iter().any(|attr| matches!(attr, Attr::NoPanic))
+    }
+
+    pub(crate) fn parametric_params(&self) -> &[DefId] {
+        self.parametric_params
     }
 }
 
@@ -325,7 +335,7 @@ pub struct SortDecl {
     pub span: Span,
 }
 
-pub type SortDecls = FxHashMap<Symbol, SortDecl>;
+pub type SortDecls = UnordMap<Symbol, SortDecl>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WhereBoundPredicate<'fhir> {
@@ -1074,14 +1084,9 @@ pub struct LetDecl<'fhir> {
 }
 
 #[derive(Clone, Copy)]
-pub enum NumLitKind {
-    Int,
-    Real,
-}
-
-#[derive(Clone, Copy)]
 pub enum Lit {
-    Int(u128, Option<NumLitKind>),
+    Int(u128),
+    Real(Symbol),
     Bool(bool),
     Str(Symbol),
     Char(char),
@@ -1267,8 +1272,6 @@ pub enum SpecFuncKind {
     Def(FluxDefId),
     /// Casts between sorts: id for char, int; if-then-else for bool-int; uninterpreted otherwise.
     Cast,
-    /// Built-in function to get the size of a raw pointer's pointee type.
-    PtrSize,
 }
 
 impl SpecFuncKind {
@@ -1641,8 +1644,8 @@ impl fmt::Debug for PathExpr<'_> {
 impl fmt::Debug for Lit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Lit::Int(i, Some(NumLitKind::Real)) => write!(f, "{i}real"),
-            Lit::Int(i, _) => write!(f, "{i}"),
+            Lit::Int(i) => write!(f, "{i}"),
+            Lit::Real(s) => write!(f, "{s}"),
             Lit::Bool(b) => write!(f, "{b}"),
             Lit::Str(s) => write!(f, "\"{s:?}\""),
             Lit::Char(c) => write!(f, "\'{c}\'"),

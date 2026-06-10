@@ -12,8 +12,7 @@ use flux_middle::{
 };
 use itertools::Itertools;
 use liquid_fixpoint::{FixpointFmt, Identifier, ThyFunc};
-use rustc_data_structures::fx::FxIndexSet;
-use rustc_hash::FxHashMap;
+use rustc_data_structures::{fx::FxIndexSet, unord::UnordMap};
 use rustc_hir::def_id::DefId;
 
 use crate::fixpoint_encoding::{
@@ -31,7 +30,8 @@ pub struct LeanCtxt<'a, 'genv, 'tcx> {
     pub opaque_adt_map: &'a [(FluxDefId, SortDecl)],
     pub kvar_solutions: &'a KVarSolutions,
     /// Maps the per-run `GlobalVar` index of a primop constant to its stable Lean name.
-    pub primop_var_map: &'a FxHashMap<GlobalVar, String>,
+    pub primop_var_map: &'a UnordMap<GlobalVar, String>,
+    pub hide_sort_vars: bool,
 }
 
 pub struct WithLeanCtxt<'a, 'b, 'genv, 'tcx, T> {
@@ -374,7 +374,13 @@ impl LeanFmt for Sort {
                     WithLeanCtxt { item: sort.as_ref(), cx }
                 )
             }
-            Sort::Var(v) => write!(f, "t{v}"),
+            Sort::Var(v) => {
+                if cx.hide_sort_vars {
+                    write!(f, "_")
+                } else {
+                    write!(f, "t{v}")
+                }
+            }
             Sort::BvSize(size) => {
                 panic!("sort BvSize({size}) should only occur as an argument to BitVec")
             }
@@ -391,7 +397,7 @@ impl LeanFmt for Expr {
                     Constant::Numeral(n) => write!(f, "{n}",),
                     Constant::Boolean(b) => write!(f, "{}", if *b { "True" } else { "False" }),
                     Constant::String(s) => write!(f, "{}", s.display()),
-                    Constant::Real(n) => write!(f, "{n}.0"),
+                    Constant::Real(n) => write!(f, "{}", n.display()),
                     Constant::BitVec(bv, size) => write!(f, "{}#{}", bv, size),
                 }
             }
@@ -431,6 +437,7 @@ impl LeanFmt for Expr {
                 write!(f, "(")?;
                 function.as_ref().lean_fmt(f, cx)?;
                 if let Some(sort_args) = sort_args {
+                    let cx = &LeanCtxt { hide_sort_vars: true, ..*cx };
                     for (i, s_arg) in sort_args.iter().enumerate() {
                         if matches!(s_arg, Sort::BvSize(..)) {
                             continue;

@@ -26,7 +26,7 @@ use flux_middle::{
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, AssocReft, BoundReftKind, ESpan, Expr, INNERMOST, InternalFuncKind, List,
+        self, AssocReft, BoundReftKind, ESpan, Expr, INNERMOST, InternalFuncKind, List, RecordCtor,
         RefineArgsExt, WfckResults,
         fold::TypeFoldable,
         refining::{self, Refine, Refiner},
@@ -38,11 +38,10 @@ use flux_rustc_bridge::{
 };
 use itertools::Itertools;
 use rustc_data_structures::{
-    fx::{FxHashMap, FxIndexMap},
-    unord::UnordMap,
+    fx::FxIndexMap,
+    unord::{UnordMap, UnordSet},
 };
 use rustc_errors::Diagnostic;
-use rustc_hash::FxHashSet;
 use rustc_hir::{self as hir, BodyId, OwnerId, Safety, def::DefKind, def_id::DefId};
 use rustc_index::IndexVec;
 use rustc_middle::ty::{self, AssocItem, AssocTag, BoundVar, TyCtxt};
@@ -128,7 +127,7 @@ pub trait WfckResultsProvider: Sized {
 
     fn field_proj(&self, fhir_id: FhirId) -> rty::FieldProj;
 
-    fn record_ctor(&self, fhir_id: FhirId) -> DefId;
+    fn record_ctor(&self, fhir_id: FhirId) -> RecordCtor;
 
     fn param_sort(&self, param_id: fhir::ParamId) -> rty::Sort;
 
@@ -201,11 +200,11 @@ impl WfckResultsProvider for WfckResults {
             .unwrap_or_else(|| bug!("field projection without elaboration `{fhir_id:?}`"))
     }
 
-    fn record_ctor(&self, fhir_id: FhirId) -> DefId {
-        *self
-            .record_ctors()
+    fn record_ctor(&self, fhir_id: FhirId) -> RecordCtor {
+        self.record_ctors()
             .get(fhir_id)
-            .unwrap_or_else(|| bug!("unelaborated record constructor `{fhir_id:?}`"))
+            .copied()
+            .unwrap_or_else(|| bug!("unelaborated record constructor `{:?}`", fhir_id))
     }
 
     fn param_sort(&self, param_id: fhir::ParamId) -> rty::Sort {
@@ -1394,7 +1393,7 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
 
         // De-duplicate auto traits preserving order
         {
-            let mut duplicates = FxHashSet::default();
+            let mut duplicates = UnordSet::new();
             auto_traits.retain(|trait_ref| duplicates.insert(trait_ref.def_id()));
         }
 
@@ -1471,12 +1470,10 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
                 Ok(rty::TyOrCtor::Ctor(rty::Binder::bind_with_sort(ty, sort)))
             }
             fhir::BaseTyKind::RawPtr(ty, mutability) => {
-                let name = name.map(|sym| Self::suffix_symbol(sym, "size"));
-                let bty = rty::BaseTy::RawPtr(self.conv_ty(env, ty, name)?, *mutability)
+                let bty = rty::BaseTy::RawPtr(self.conv_ty(env, ty, None)?, *mutability)
                     .shift_in_escaping(1);
-                let sort = bty.sort();
                 let ty = rty::Ty::indexed(bty, rty::Expr::nu());
-                Ok(rty::TyOrCtor::Ctor(rty::Binder::bind_with_sort(ty, sort)))
+                Ok(rty::TyOrCtor::Ctor(rty::Binder::bind_with_sort(ty, rty::Sort::RawPtr)))
             }
             fhir::BaseTyKind::Err(err) => Err(QueryErr::Emitted(*err)),
         }
@@ -2070,26 +2067,25 @@ fn prim_ty_to_bty(prim_ty: rustc_hir::PrimTy) -> rty::BaseTy {
 impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
     fn conv_lit(&self, lit: fhir::Lit, fhir_id: FhirId, span: Span) -> QueryResult<rty::Constant> {
         match lit {
-            fhir::Lit::Int(n, kind) => {
-                match kind {
-                    Some(fhir::NumLitKind::Int) => Ok(rty::Constant::from(n)),
-                    Some(fhir::NumLitKind::Real) => Ok(rty::Constant::Real(rty::Real(n))),
-                    None => {
-                        let sort = self.results().node_sort(fhir_id);
-                        if let rty::Sort::BitVec(bvsize) = sort {
-                            if let rty::BvSize::Fixed(size) = bvsize
-                                && (n == 0 || n.ilog2() < size)
-                            {
-                                Ok(rty::Constant::BitVec(n, size))
-                            } else {
-                                Err(self.emit(errors::InvalidBitVectorConstant::new(span, sort)))?
-                            }
-                        } else {
-                            Ok(rty::Constant::from(n))
-                        }
+            fhir::Lit::Int(n) => {
+                let sort = self.results().node_sort(fhir_id);
+                if let rty::Sort::BitVec(bvsize) = sort {
+                    if let rty::BvSize::Fixed(size) = bvsize
+                        && (n == 0 || n.ilog2() < size)
+                    {
+                        Ok(rty::Constant::BitVec(n, size))
+                    } else {
+                        Err(self.emit(errors::InvalidBitVectorConstant::new(span, sort)))?
                     }
+                } else if sort == rty::Sort::Real {
+                    // Sort inference allows Int literals to unify with Real, but we require
+                    // explicit float syntax to avoid silently producing a mistyped constant.
+                    Err(self.emit(errors::IntLiteralInRealContext::new(span, n)))?
+                } else {
+                    Ok(rty::Constant::from(n))
                 }
             }
+            fhir::Lit::Real(sym) => Ok(rty::Constant::Real(rty::Real(sym))),
             fhir::Lit::Bool(b) => Ok(rty::Constant::from(b)),
             fhir::Lit::Str(s) => Ok(rty::Constant::from(s)),
             fhir::Lit::Char(c) => Ok(rty::Constant::from(c)),
@@ -2181,12 +2177,14 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
                 rty::Expr::bounded_quant(kind, rng, body)
             }
             fhir::ExprKind::Record(flds) => {
-                let def_id = self.results().record_ctor(expr.fhir_id);
                 let flds = flds
                     .iter()
                     .map(|expr| self.conv_expr(env, expr))
                     .try_collect()?;
-                rty::Expr::ctor_struct(def_id, flds)
+                match self.results().record_ctor(expr.fhir_id) {
+                    RecordCtor::Struct(def_id) => rty::Expr::ctor_struct(def_id, flds),
+                    RecordCtor::RawPtr => rty::Expr::ctor_raw_ptr(flds),
+                }
             }
             fhir::ExprKind::SetLiteral(elems) => {
                 let elems = elems
@@ -2202,7 +2200,10 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
                         _ => span_bug!(path.span, "unexpected path in constructor"),
                     }
                 } else {
-                    self.results().record_ctor(expr.fhir_id)
+                    match self.results().record_ctor(expr.fhir_id) {
+                        RecordCtor::Struct(def_id) => def_id,
+                        RecordCtor::RawPtr => bug!("unexpected raw pointer constructor"),
+                    }
                 };
                 let assns = self.conv_constructor_exprs(def_id, env, exprs, &spread)?;
                 rty::Expr::ctor_struct(def_id, assns)
@@ -2283,7 +2284,7 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
         let spread = spread
             .map(|spread| self.conv_expr(env, &spread.expr))
             .transpose()?;
-        let mut field_exprs_by_name: FxHashMap<Symbol, rty::Expr> = exprs
+        let mut field_exprs_by_name: UnordMap<Symbol, rty::Expr> = exprs
             .iter()
             .map(|field_expr| -> QueryResult<_> {
                 Ok((field_expr.ident.name, self.conv_expr(env, &field_expr.expr)?))
@@ -2388,13 +2389,6 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
             fhir::Res::GlobalFunc(fhir::SpecFuncKind::Thy(itf)) => {
                 let sort = THEORY_FUNCS.get(&itf).unwrap().sort.clone();
                 (rty::Expr::global_func(rty::SpecFuncKind::Thy(itf)), rty::Sort::Func(sort))
-            }
-            fhir::Res::GlobalFunc(fhir::SpecFuncKind::PtrSize) => {
-                let fsort = rty::PolyFuncSort::new(
-                    List::empty(),
-                    rty::FuncSort::new(vec![rty::Sort::RawPtr], rty::Sort::Int),
-                );
-                (rty::Expr::internal_func(rty::InternalFuncKind::PtrSize), rty::Sort::Func(fsort))
             }
             fhir::Res::GlobalFunc(fhir::SpecFuncKind::Cast) => {
                 let fsort = rty::PolyFuncSort::new(
@@ -2884,7 +2878,7 @@ fn transitive_bounds<'tcx>(
     tcx: TyCtxt<'tcx>,
     trait_refs: impl Iterator<Item = ty::PolyTraitRef<'tcx>>,
 ) -> impl Iterator<Item = ty::PolyTraitRef<'tcx>> {
-    let mut seen = FxHashSet::default();
+    let mut seen = UnordSet::new();
     let mut stack: Vec<_> = trait_refs.collect();
 
     std::iter::from_fn(move || {
@@ -3171,6 +3165,21 @@ mod errors {
     pub(super) struct GenericsOnForeignTy {
         #[primary_span]
         pub span: Span,
+    }
+
+    #[derive(Diagnostic)]
+    #[diag(fhir_analysis_int_literal_in_real_context, code = E0999)]
+    pub struct IntLiteralInRealContext {
+        #[primary_span]
+        #[label]
+        span: Span,
+        n: u128,
+    }
+
+    impl IntLiteralInRealContext {
+        pub(crate) fn new(span: Span, n: u128) -> Self {
+            Self { span, n }
+        }
     }
 
     #[derive(Diagnostic)]
