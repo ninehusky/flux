@@ -162,6 +162,11 @@ pub struct Flags {
     pub dump_rty: bool,
     /// Dumps the no-panic inference call graph to `<crate>-call-graph.json` in [`Self::log_dir`]
     /// (debugging). One file per analyzed crate; sibling crates appear as `ExternalCrate` stubs.
+    #[arg(
+        long = flux_arg!("dump-call-graph"),
+        num_args = 0..=1,
+        default_missing_value = "true"
+    )]
     pub dump_call_graph: bool,
     /// Optimistically keeps running flux even after errors are found to get as many errors as possible
     #[arg(
