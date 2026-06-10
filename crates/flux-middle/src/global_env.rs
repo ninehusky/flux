@@ -81,12 +81,18 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     /// During checking, we track all items transitively reached from explicitly included items.
     /// This method is used during metadata encoding to avoid triggering queries for items that
     /// were not reached. If the item was not previously queried, returns [`QueryErr::Ignored`].
+    ///
+    /// Exception: in `-Fdump-call-graph` (dump-only) mode we skip `check_crate` entirely, so the
+    /// "reached" set is empty and gating here would encode every local item as `NotIncluded`,
+    /// producing degenerate metadata that breaks any downstream crate referencing it (E0999). Since
+    /// these are signature queries (`fn_sig`, `adt_def`, …) and not body verification, running them
+    /// for all local items yields real metadata without re-introducing refinement errors.
     pub fn run_query_if_reached<K: DispatchKey, R>(
         self,
         key: K,
         query: impl FnOnce(Self, K) -> QueryResult<R>,
     ) -> QueryResult<R> {
-        if !self.inner.queries.queried(key.def_id()) {
+        if !config::dump_call_graph() && !self.inner.queries.queried(key.def_id()) {
             return Err(QueryErr::NotIncluded { def_id: key.def_id() });
         }
 
