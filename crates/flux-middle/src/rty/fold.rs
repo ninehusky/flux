@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     global_env::GlobalEnv,
-    rty::{BoundReft, BoundRegion, Var, VariantSig, expr::HoleKind},
+    rty::{BoundReft, BoundRegion, BoundRegionKind, Var, VariantSig, expr::HoleKind},
 };
 
 pub trait TypeVisitor: Sized {
@@ -548,7 +548,17 @@ pub trait TypeFoldable: TypeVisitable {
         impl TypeFolder for RegionEraser {
             fn fold_region(&mut self, r: &Region) -> Region {
                 match *r {
-                    ReBound(..) => *r,
+                    // Keep the binder structure (debruijn + var) so we don't break
+                    // binder scoping, but drop the `kind` naming hint, which is
+                    // region *identity* and should be erased. Otherwise two
+                    // alpha-equivalent binders that differ only in their naming
+                    // hint -- e.g. a `dyn Fn` predicate elaborated from a trait
+                    // declaration vs. its impl, whose bound region is `BrNamed`
+                    // with the respective method `DefId` -- compare unequal and
+                    // trip the structural `assert_eq`s in subtyping.
+                    ReBound(debruijn, br) => {
+                        ReBound(debruijn, BoundRegion { var: br.var, kind: BoundRegionKind::Anon })
+                    }
                     _ => ReErased,
                 }
             }

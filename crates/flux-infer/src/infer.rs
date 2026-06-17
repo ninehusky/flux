@@ -415,15 +415,20 @@ impl<'infcx, 'genv, 'tcx> InferCtxt<'infcx, 'genv, 'tcx> {
         &mut self,
         t: &Binder<T>,
         f: impl FnOnce(&mut InferCtxt<'_, 'genv, 'tcx>, T) -> U,
-    ) -> U
+    ) -> InferResult<U>
     where
         T: TypeFoldable,
     {
+        // Propagate the `InferErr` instead of `.unwrap()`ing it. When the evars
+        // opened inside the existential can't be solved, `ensure_resolved_evars`
+        // returns `Err(InferErr::UnsolvedEvar)`; unwrapping it here turns a
+        // recoverable param-inference failure into a hard ICE. The body-checking
+        // path already catches this same error and emits a clean E0999, so we let
+        // it flow there rather than crashing.
         self.ensure_resolved_evars(|infcx| {
             let t = t.replace_bound_refts_with(|sort, mode, _| infcx.fresh_infer_var(sort, mode));
             Ok(f(infcx, t))
         })
-        .unwrap()
     }
 
     /// Used in conjunction with [`InferCtxt::pop_evar_scope`] to ensure evars are solved at the end
@@ -823,7 +828,7 @@ impl<'a, E: LocEnv> Sub<'a, E> {
             }
 
             (_, TyKind::Exists(ctor_b)) => {
-                infcx.enter_exists(ctor_b, |infcx, ty_b| self.tys(infcx, &a, &ty_b))
+                infcx.enter_exists(ctor_b, |infcx, ty_b| self.tys(infcx, &a, &ty_b))?
             }
             (_, TyKind::Constr(pred_b, ty_b)) => {
                 infcx.check_pred(pred_b, self.tag());
@@ -1030,7 +1035,52 @@ impl<'a, E: LocEnv> Sub<'a, E> {
             | (BaseTy::Char, BaseTy::Char)
             | (BaseTy::RawPtrMetadata(_), BaseTy::RawPtrMetadata(_)) => Ok(()),
             (BaseTy::Dynamic(preds_a, _), BaseTy::Dynamic(preds_b, _)) => {
-                tracked_span_assert_eq!(preds_a.erase_regions(), preds_b.erase_regions());
+                // Relate the existential predicates by recursing into their
+                // arguments instead of asserting structural equality. A hard
+                // structural `assert_eq` is wrong here: the predicate arguments
+                // may carry refinements (e.g. `dyn Client<{T | p}>` related
+                // against `dyn Client<T>`, which shows up when an existentially
+                // refined type is coerced to a trait object) or alpha-equivalent
+                // bound-region naming hints, neither of which `erase_regions`
+                // normalizes away. We mirror the predicate traversal used in
+                // `region_matching::rty_infer_from_existential_pred`.
+                debug_assert_eq!(preds_a.len(), preds_b.len());
+                for (pred_a, pred_b) in iter::zip(preds_a, preds_b) {
+                    match (pred_a.skip_binder_ref(), pred_b.skip_binder_ref()) {
+                        (
+                            rty::ExistentialPredicate::Trait(trait_ref_a),
+                            rty::ExistentialPredicate::Trait(trait_ref_b),
+                        ) => {
+                            debug_assert_eq!(trait_ref_a.def_id, trait_ref_b.def_id);
+                            for (arg_a, arg_b) in iter::zip(&trait_ref_a.args, &trait_ref_b.args) {
+                                self.generic_args(infcx, Invariant, arg_a, arg_b)?;
+                            }
+                        }
+                        (
+                            rty::ExistentialPredicate::Projection(proj_a),
+                            rty::ExistentialPredicate::Projection(proj_b),
+                        ) => {
+                            debug_assert_eq!(proj_a.def_id, proj_b.def_id);
+                            for (arg_a, arg_b) in iter::zip(&proj_a.args, &proj_b.args) {
+                                self.generic_args(infcx, Invariant, arg_a, arg_b)?;
+                            }
+                            self.btys(
+                                infcx,
+                                proj_a.term.as_bty_skipping_binder(),
+                                proj_b.term.as_bty_skipping_binder(),
+                            )?;
+                        }
+                        (
+                            rty::ExistentialPredicate::AutoTrait(def_id_a),
+                            rty::ExistentialPredicate::AutoTrait(def_id_b),
+                        ) => {
+                            debug_assert_eq!(def_id_a, def_id_b);
+                        }
+                        _ => Err(query_bug!(
+                            "incompatible existential predicates: `{pred_a:?}` `{pred_b:?}`"
+                        ))?,
+                    }
+                }
                 Ok(())
             }
             (BaseTy::Closure(did1, tys_a, _, _), BaseTy::Closure(did2, tys_b, _, _))

@@ -64,7 +64,17 @@ impl Env {
     }
 
     fn downcast(&mut self, genv: GlobalEnv, place: &Place, variant_idx: VariantIdx) -> QueryResult {
-        let (node, ..) = self.ensure_unfolded(genv, place)?;
+        let (node, place_ref, ..) = self.ensure_unfolded(genv, place)?;
+        // `ensure_unfolded` stops walking the projection at an `Index`/`ConstantIndex` (arrays and
+        // slices are not unfolded in this analysis). When that happens the returned `place_ref` is
+        // shorter than the full projection and `node` is the array/slice itself, not the indexed
+        // element. This arises for `match seq[i] { Variant => .. }`, whose discriminant place is
+        // `seq[i]`: the `SwitchInt` handler then asks us to downcast it. There is no enum node to
+        // unfold here (the element behind the index is opaque), so downcasting the slice would trip
+        // the `bug!` in `PlaceNode::downcast`. Skip it: the downcast is a no-op for fold/unfold.
+        if place_ref.projection.len() < place.projection.len() {
+            return Ok(());
+        }
         node.downcast(genv, variant_idx)?;
         Ok(())
     }

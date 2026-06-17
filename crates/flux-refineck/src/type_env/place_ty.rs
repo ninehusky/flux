@@ -7,7 +7,6 @@ use flux_infer::{
 };
 use flux_middle::{
     global_env::GlobalEnv,
-    queries::QueryResult,
     rty::{
         AdtDef, BaseTy, Binder, EarlyBinder, Expr, FIRST_VARIANT, GenericArg, GenericArgsExt, List,
         Loc, Mutability, Path, PtrKind, Ref, Sort, Ty, TyKind, VariantIdx, VariantSig,
@@ -84,6 +83,17 @@ pub(crate) trait LookupMode {
         args: &[GenericArg],
         idx: &Expr,
     ) -> Result<Vec<Ty>, Self::Error>;
+
+    /// Variant-aware downcast (handles both structs and enums). Used to project the fields of a
+    /// `Downcast` place element that wasn't pre-unfolded into a [`TyKind::Downcast`] node (e.g. an
+    /// enum reached through a slice/array index like `seq[i]`, whose element is never unfolded).
+    fn downcast(
+        &mut self,
+        adt: &AdtDef,
+        args: &[GenericArg],
+        variant: VariantIdx,
+        idx: &Expr,
+    ) -> Result<Vec<Ty>, Self::Error>;
 }
 
 struct Unfold<'a, 'infcx, 'genv, 'tcx>(&'a mut InferCtxt<'infcx, 'genv, 'tcx>, Span);
@@ -103,12 +113,32 @@ impl LookupMode for Unfold<'_, '_, '_, '_> {
     ) -> Result<Vec<Ty>, Self::Error> {
         downcast_struct(self.0, adt, args, idx, self.1)
     }
+
+    fn downcast(
+        &mut self,
+        adt: &AdtDef,
+        args: &[GenericArg],
+        variant: VariantIdx,
+        idx: &Expr,
+    ) -> Result<Vec<Ty>, Self::Error> {
+        downcast(self.0, adt, args, variant, idx, self.1)
+    }
 }
 
 struct NoUnfold;
 
 impl LookupMode for NoUnfold {
     fn downcast_struct(&mut self, _: &AdtDef, _: &[GenericArg], _: &Expr) -> Result<Vec<Ty>, !> {
+        tracked_span_bug!("cannot unfold in `NoUnfold` mode")
+    }
+
+    fn downcast(
+        &mut self,
+        _: &AdtDef,
+        _: &[GenericArg],
+        _: VariantIdx,
+        _: &Expr,
+    ) -> Result<Vec<Ty>, !> {
         tracked_span_bug!("cannot unfold in `NoUnfold` mode")
     }
 
@@ -224,7 +254,25 @@ impl PlacesTree {
                         _ => tracked_span_bug!("invalid index access `{ty:?}`"),
                     }
                 }
-                PlaceElem::Downcast(..) => {}
+                PlaceElem::Downcast(_, variant) => {
+                    // Project the variant's fields into a `Downcast` node so a following
+                    // `Field` access resolves against the correct (enum-variant or struct)
+                    // fields. This is normally done while unfolding, but a place reached
+                    // through a slice/array index (e.g. `match seq[i] { Variant(x) => .. }`)
+                    // is never unfolded, leaving a raw `Indexed(Adt(enum))` here. Without this,
+                    // the `Field` arm falls through to `downcast_struct` on the enum, which has
+                    // no struct fields, and indexing the empty field vector panics.
+                    if let TyKind::Indexed(BaseTy::Adt(adt, args), idx) = ty.kind() {
+                        let fields = mode.downcast(adt, args, variant, idx)?;
+                        ty = Ty::downcast(
+                            adt.clone(),
+                            args.clone(),
+                            ty.clone(),
+                            variant,
+                            fields.into(),
+                        );
+                    }
+                }
             }
         }
         cursor.reset();
@@ -348,6 +396,14 @@ impl PlacesTree {
             .unwrap_or_else(|| tracked_span_bug!("loc not found {loc:?}"))
     }
 
+    /// Returns whether `loc` currently has a binding in the environment. Used by callers that may
+    /// look up a (strong) pointer's target location which can legitimately be absent at a
+    /// control-flow join during the shape pass (a stranded pointer), so they can recover with a
+    /// graceful query error instead of tripping the `bug!` in [`PlacesTree::get_loc`].
+    pub(crate) fn contains_loc(&self, loc: &Loc) -> bool {
+        self.map.contains_key(loc)
+    }
+
     fn get_loc_mut(&mut self, loc: &Loc) -> &mut Binding {
         self.map
             .get_mut(loc)
@@ -376,7 +432,7 @@ impl LookupResult<'_> {
         self.update(Ty::blocked(new_ty))
     }
 
-    pub(crate) fn fold(self, infcx: &mut InferCtxtAt) -> QueryResult<Ty> {
+    pub(crate) fn fold(self, infcx: &mut InferCtxtAt) -> InferResult<Ty> {
         let ty = fold(self.bindings, infcx, &self.ty, self.is_strg)?;
         self.update(ty.clone());
         Ok(ty)
@@ -872,7 +928,7 @@ fn fold(
     infcx: &mut InferCtxtAt,
     ty: &Ty,
     is_strg: bool,
-) -> QueryResult<Ty> {
+) -> InferResult<Ty> {
     match ty.kind() {
         TyKind::Ptr(PtrKind::Box, path) => {
             let loc = path.to_loc().unwrap_or_else(|| tracked_span_bug!());
@@ -903,9 +959,18 @@ fn fold(
                 let ty = if partially_moved {
                     Ty::uninit()
                 } else {
-                    infcx
-                        .check_constructor(variant_sig, args, &fields, ConstrReason::Fold)
-                        .unwrap_or_else(|err| tracked_span_bug!("{err:?}"))
+                    // Propagate `InferErr` instead of `.unwrap()`ing it. When the
+                    // evars opened while checking the constructor can't be
+                    // solved, `check_constructor` returns
+                    // `Err(InferErr::UnsolvedEvar)`; bug-ing here turns a
+                    // recoverable param-inference failure into a hard ICE. This
+                    // shows up folding a `Downcast`ed struct place at a join
+                    // point inside a closure with early-return `Result` control
+                    // flow (e.g. `grant.enter(|app, _| { if c { Err(..) } else
+                    // { .. } })`), where a refined field index/predicate stays
+                    // unresolved. The body-checking path catches the same error
+                    // and emits a clean E0999, so we let it flow there.
+                    infcx.check_constructor(variant_sig, args, &fields, ConstrReason::Fold)?
                 };
 
                 Ok(ty)

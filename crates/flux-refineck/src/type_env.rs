@@ -17,6 +17,7 @@ use flux_middle::{
     PlaceExt as _,
     global_env::GlobalEnv,
     pretty::{PrettyCx, PrettyNested},
+    query_bug,
     queries::QueryResult,
     rty::{
         BaseTy, Binder, BoundReftKind, Ctor, Ensures, Expr, ExprKind, FnSig, GenericArg, HoleKind,
@@ -200,6 +201,16 @@ impl<'a> TypeEnv<'a> {
         path: &Path,
         bound: PtrToRefBound,
     ) -> InferResult<Ty> {
+        // The pointer's target location can legitimately be missing from the environment when we
+        // relate a `Ptr(mut, ℓ)` whose location `ℓ` was stranded across a control-flow join during
+        // the shape pass (e.g. a `&mut` produced inside one arm of a `grant.enter(|..| {..})`
+        // closure that doesn't survive the join into the goto target). Looking it up would trip the
+        // `bug!` in `PlacesTree::get_loc`, turning a recoverable situation into a hard ICE. Recover
+        // with a graceful query error so the body-checking path emits a clean E0999 instead.
+        if !self.bindings.contains_loc(&path.loc) {
+            return Err(query_bug!("ptr_to_ref: pointer target location `{:?}` not found", path.loc))?;
+        }
+
         // ℓ: t1
         let t1 = self.bindings.lookup(path, infcx.span).fold(infcx)?;
 
@@ -550,8 +561,23 @@ impl BasicBlockEnvShape {
         match arg {
             GenericArg::Ty(ty) => GenericArg::Ty(Self::pack_ty(scope, ty)),
             GenericArg::Base(arg) => {
-                assert!(!scope.has_free_vars(arg));
-                GenericArg::Base(arg.clone())
+                if scope.has_free_vars(arg) {
+                    // Generalize a base arg that mentions variables from an
+                    // inner scope (e.g. a refined type argument whose index or
+                    // predicate references a local). Mirror the `Indexed` case
+                    // in `pack_ty`: pack the base type and replace the
+                    // free-var-bearing index/predicate with a hole, which the
+                    // join point's inference resolves later.
+                    GenericArg::Base(arg.as_ref().map(|sty| {
+                        SubsetTy::new(
+                            Self::pack_bty(scope, &sty.bty),
+                            Expr::nu(),
+                            Expr::hole(HoleKind::Pred),
+                        )
+                    }))
+                } else {
+                    GenericArg::Base(arg.clone())
+                }
             }
             GenericArg::Lifetime(re) => GenericArg::Lifetime(*re),
             GenericArg::Const(c) => GenericArg::Const(c.clone()),
