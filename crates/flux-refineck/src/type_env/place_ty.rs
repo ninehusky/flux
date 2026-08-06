@@ -117,6 +117,29 @@ impl LookupMode for NoUnfold {
     }
 }
 
+/// Signals that resolving a place ran into a folded struct.
+pub(crate) struct NeedsUnfold;
+
+/// Like [`NoUnfold`], but reports hitting a folded struct instead of raising a bug.
+struct NoUnfoldFallible;
+
+impl LookupMode for NoUnfoldFallible {
+    type Error = NeedsUnfold;
+
+    fn downcast_struct(
+        &mut self,
+        _: &AdtDef,
+        _: &[GenericArg],
+        _: &Expr,
+    ) -> Result<Vec<Ty>, NeedsUnfold> {
+        Err(NeedsUnfold)
+    }
+
+    fn unpack(&mut self, ty: &Ty) -> Ty {
+        ty.clone()
+    }
+}
+
 impl PlacesTree {
     pub(crate) fn unfold(
         &mut self,
@@ -242,6 +265,16 @@ impl PlacesTree {
 
     pub(crate) fn lookup(&mut self, key: &impl LookupKey, _span: Span) -> LookupResult<'_> {
         self.lookup_inner(key, NoUnfold).into_ok()
+    }
+
+    /// [`Self::lookup`] that reports, rather than bugs on, a place whose resolution would require
+    /// unfolding a struct.
+    pub(crate) fn try_lookup(
+        &mut self,
+        key: &impl LookupKey,
+        _span: Span,
+    ) -> Result<LookupResult<'_>, NeedsUnfold> {
+        self.lookup_inner(key, NoUnfoldFallible)
     }
 
     pub(crate) fn paths(&self) -> Vec<Path> {
@@ -898,6 +931,20 @@ fn fold(
                     .iter()
                     .map(|ty| fold(bindings, infcx, ty, is_strg))
                     .try_collect_vec()?;
+
+                // A field that is currently borrowed away cannot be put back into the struct:
+                // `check_constructor` would have to check the blocked type against the field's
+                // declared type, and blocked types have no subtyping rule. Leave the place
+                // unfolded; the borrow has to be returned before the struct can be rebuilt.
+                if fields.iter().any(|ty| matches!(ty.kind(), TyKind::Blocked(_))) {
+                    return Ok(Ty::downcast(
+                        adt.clone(),
+                        args.clone(),
+                        ty_.clone(),
+                        *variant_idx,
+                        fields.into(),
+                    ));
+                }
 
                 let partially_moved = fields.iter().any(Ty::is_uninit);
                 let ty = if partially_moved {

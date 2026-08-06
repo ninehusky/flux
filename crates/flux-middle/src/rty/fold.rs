@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     global_env::GlobalEnv,
-    rty::{BoundReft, BoundRegion, Var, VariantSig, expr::HoleKind},
+    rty::{BoundReft, BoundRegion, BoundRegionKind, Var, VariantSig, expr::HoleKind},
 };
 
 pub trait TypeVisitor: Sized {
@@ -555,6 +555,28 @@ pub trait TypeFoldable: TypeVisitable {
         }
 
         self.fold_with(&mut RegionEraser)
+    }
+
+    /// Like [`Self::erase_regions`], but also strips the *names* of late-bound regions.
+    ///
+    /// [`BoundRegionKind::Named`] carries the `DefId` of the lifetime's declaration site, which is
+    /// naming metadata rather than part of a type's identity. Two alpha-equivalent binders can
+    /// therefore carry different kinds, and comparing region-erased types would report them as
+    /// unequal. This mirrors `rustc`'s `erase_and_anonymize_regions`.
+    fn erase_and_anonymize_regions(&self) -> Self {
+        struct RegionAnonymizer;
+        impl TypeFolder for RegionAnonymizer {
+            fn fold_region(&mut self, r: &Region) -> Region {
+                match *r {
+                    ReBound(debruijn, br) => {
+                        ReBound(debruijn, BoundRegion { var: br.var, kind: BoundRegionKind::Anon })
+                    }
+                    _ => ReErased,
+                }
+            }
+        }
+
+        self.fold_with(&mut RegionAnonymizer)
     }
 }
 

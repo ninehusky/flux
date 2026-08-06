@@ -11,10 +11,11 @@ use flux_middle::{
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, AliasKind, AliasTy, BaseTy, Binder, BoundReftKind, BoundVariableKinds,
-        CoroutineObligPredicate, Ctor, ESpan, EVid, EarlyBinder, Expr, ExprKind, FieldProj,
-        GenericArg, HoleKind, InferMode, Lambda, List, Loc, Mutability, Name, NameProvenance, Path,
-        PolyVariant, PtrKind, RefineArgs, RefineArgsExt, Region, Sort, Ty, TyCtor, TyKind, Var,
+        self, AliasKind, AliasTy, BaseTy, Binder, BoundReftKind, BoundRegionKind,
+        BoundVariableKind, BoundVariableKinds, CoroutineObligPredicate, Ctor, ESpan, EVid,
+        EarlyBinder, Expr, ExprKind, FieldProj, GenericArg, HoleKind, InferMode, Lambda, List, Loc,
+        Mutability, Name, NameProvenance, Path, PolyVariant, PtrKind, RefineArgs, RefineArgsExt,
+        Region, Sort, Ty, TyCtor, TyKind, Var,
         canonicalize::{Hoister, HoisterDelegate},
         fold::TypeFoldable,
     },
@@ -1019,7 +1020,10 @@ impl<'a, E: LocEnv> Sub<'a, E> {
             | (BaseTy::Char, BaseTy::Char)
             | (BaseTy::RawPtrMetadata(_), BaseTy::RawPtrMetadata(_)) => Ok(()),
             (BaseTy::Dynamic(preds_a, _), BaseTy::Dynamic(preds_b, _)) => {
-                tracked_span_assert_eq!(preds_a.erase_regions(), preds_b.erase_regions());
+                tracked_span_assert_eq!(
+                    preds_a.erase_and_anonymize_regions(),
+                    preds_b.erase_and_anonymize_regions()
+                );
                 Ok(())
             }
             (BaseTy::Closure(did1, tys_a, _, _), BaseTy::Closure(did2, tys_b, _, _))
@@ -1032,7 +1036,7 @@ impl<'a, E: LocEnv> Sub<'a, E> {
                 Ok(())
             }
             (BaseTy::FnPtr(sig_a), BaseTy::FnPtr(sig_b)) => {
-                tracked_span_assert_eq!(sig_a.erase_regions(), sig_b.erase_regions());
+                tracked_span_assert_eq!(anonymize_binder(sig_a), anonymize_binder(sig_b));
                 Ok(())
             }
             (BaseTy::Never, BaseTy::Never) => Ok(()),
@@ -1293,4 +1297,29 @@ mod pretty {
     }
 
     impl_debug_with_default_cx!(Tag);
+}
+
+/// Strip the names of a binder's late-bound regions, both in the bound variable list and in the
+/// value itself, so that alpha-equivalent binders compare equal.
+///
+/// [`BoundRegionKind::Named`] records the `DefId` of the lifetime's declaration site. That is
+/// naming metadata, not part of the type's identity: the very same signature reached through a
+/// different path (say via an `impl` rather than the struct definition) carries a different
+/// `DefId`. Only the value is reached by region folding, so the bound variable list has to be
+/// rewritten separately.
+fn anonymize_binder<T: TypeFoldable>(binder: &Binder<T>) -> Binder<T> {
+    let vars: Vec<_> = binder
+        .vars()
+        .iter()
+        .map(|var| {
+            match var {
+                BoundVariableKind::Region(_) => BoundVariableKind::Region(BoundRegionKind::Anon),
+                BoundVariableKind::Refine(..) => var.clone(),
+            }
+        })
+        .collect();
+    Binder::bind_with_vars(
+        binder.skip_binder_ref().erase_and_anonymize_regions(),
+        List::from_vec(vars),
+    )
 }
