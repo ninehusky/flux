@@ -2473,6 +2473,17 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
                 rty::AliasReft { assoc_id: assoc_reft.def_id, args: trait_ref.args }
             }
         };
+        // Erase the regions in the args. An `AliasReft` lives inside a refinement *expression*,
+        // and refinements never depend on lifetimes -- `normalize_alias_reft` already erases them
+        // before handing the trait ref to the solver. More importantly, a region written here has
+        // no counterpart to be inferred from: `struct_compat::Zipper` fills region holes by
+        // walking the flux signature against the `rustc` one, and it only ever visits *types*.
+        // A region hole created while converting, say, the `&T` in `<&T as Trait<..>>::r(..)`
+        // would therefore never be filled, and `Holes::replace_holes` would ICE on it.
+        let alias_reft = rty::AliasReft {
+            assoc_id: alias_reft.assoc_id,
+            args: alias_reft.args.erase_regions(),
+        };
         let fsort = alias_reft.fsort(self.genv())?;
         self.0.insert_alias_reft_sort(fhir_id, fsort);
         Ok(alias_reft)
