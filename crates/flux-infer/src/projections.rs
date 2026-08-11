@@ -6,9 +6,9 @@ use flux_middle::{
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, AliasKind, AliasReft, AliasTy, BaseTy, Binder, Clause, ClauseKind, Const, ConstKind,
-        EarlyBinder, Expr, ExprKind, GenericArg, List, ProjectionPredicate, RefineArgs, Region,
-        Sort, SubsetTy, SubsetTyCtor, Ty, TyKind, TyOrBase,
+        self, AliasKind, AliasReft, AliasTy, BaseTy, Binder, Clause, Const, ConstKind, EarlyBinder,
+        Expr, ExprKind, GenericArg, List, ProjectionPredicate, RefineArgs, Region, Sort, SubsetTy,
+        SubsetTyCtor, Ty, TyKind, TyOrBase,
         fold::{FallibleTypeFolder, TypeFoldable, TypeSuperFoldable, TypeVisitable},
         refining::Refiner,
         subst::{GenericsSubstDelegate, GenericsSubstFolder},
@@ -151,11 +151,17 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
             .predicates
             .iter()
             .filter_map(|pred| {
-                if let ClauseKind::Projection(pred) = pred.kind_skipping_binder() {
-                    Some(EarlyBinder(pred.clone()))
-                } else {
-                    None
-                }
+                // Skip higher-ranked clauses. Blindly skipping the binder (as
+                // `kind_skipping_binder` does) leaves its bound vars escaping in the predicate,
+                // and trait selection goes through `rustc` types, which cannot represent
+                // escaping bound vars. Concretely, `impl<I, P> Iterator for Filter<I, P>` carries
+                // `P: for<'a> FnMut(&'a I::Item) -> bool`; skipping that `for<'a>` yields the
+                // obligation `<P as FnOnce<(&'a I::Item,)>>::Output` with `'a` free, which trips
+                // the guard in `assemble_candidates_from_impls`. Note this can't be detected with
+                // `has_escaping_bvars`, which only tracks refinement vars, not regions.
+                // Leaving such a predicate unresolved is sound: it only costs precision.
+                let pred = pred.as_projection_clause()?;
+                if pred.vars().is_empty() { Some(EarlyBinder(pred.skip_binder())) } else { None }
             })
             .collect();
 
@@ -244,6 +250,19 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
                     .ok_or_else(|| {
                         query_bug!("no associated type for {obligation:?} in impl {impl_def_id:?}")
                     })?;
+                // `subst` only recovers the *impl's* generics. For a generic associated type the
+                // assoc item has parameters of its own on top of those, and they are supplied by
+                // the tail of the obligation's args (which are the trait's args followed by the
+                // GAT's own). Without them the `EarlyBinder` below is instantiated with too few
+                // args and substitution runs off the end of the list.
+                let assoc_generics = tcx.generics_of(obligation.def_id);
+                args.extend(
+                    obligation
+                        .args
+                        .iter()
+                        .skip(assoc_generics.parent_count)
+                        .cloned(),
+                );
                 Ok(self
                     .genv()
                     .type_of(assoc_type_id)?
@@ -407,7 +426,7 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
         // FIXME(nilehmann) This is a patch to not panic inside rustc so we are
         // able to catch the bug
         if trait_pred.has_escaping_bound_vars() {
-            tracked_span_bug!();
+            tracked_span_bug!("escaping bound vars in `{trait_ref:?}`");
         }
         match self.selcx.select(&trait_pred) {
             Ok(Some(ImplSource::UserDefined(impl_data))) => {

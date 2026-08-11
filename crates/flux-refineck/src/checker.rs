@@ -1311,6 +1311,11 @@ impl<'ck, 'genv, 'tcx, M: Mode> Checker<'ck, 'genv, 'tcx, M> {
             )?;
             self.check_ret(&mut infcx, &mut env, span)
         } else if let Some(real_target) = self.is_dummy_join(target) {
+            // We skip over dummy-join blocks without checking them, but they still take part in
+            // the dominator tree: `real_target`'s immediate dominator is often the block we are
+            // skipping. Record its marker so [`marker_at_dominator`] can find one. The block has
+            // only no-op statements and a `goto`, so the marker here is the one it would get.
+            self.markers[target] = Some(infcx.marker());
             self.check_goto(infcx, env, span, real_target)
         } else if self.body.is_join_point(target) {
             if M::check_goto_join_point(self, infcx, env, span, target)? {
@@ -2539,7 +2544,7 @@ fn marker_at_dominator<'a>(
         .unwrap_or_else(|| tracked_span_bug!());
     markers[dominator]
         .as_ref()
-        .unwrap_or_else(|| tracked_span_bug!())
+        .unwrap_or_else(|| tracked_span_bug!("no marker at dominator {dominator:?} of {bb:?}"))
 }
 
 pub(crate) mod errors {

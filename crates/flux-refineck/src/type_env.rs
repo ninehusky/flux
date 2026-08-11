@@ -326,7 +326,15 @@ impl<'a> TypeEnv<'a> {
 
     pub(crate) fn fold(&mut self, infcx: &mut InferCtxtAt, place: &Place) -> InferResult {
         let span = infcx.span;
-        self.bindings.lookup(place, span).fold(infcx)?;
+        // Resolving `place` can require unfolding a struct along the way, which means the place
+        // is *already* folded and there is nothing to do. This happens when a fold statement
+        // targets a place behind a pointer into another location that an earlier fold on the
+        // same edge has since folded up, e.g. folding `*x` and then `*(t.0)` where `t.0` is a
+        // pointer into `x`'s interior.
+        let Ok(lookup) = self.bindings.try_lookup(place, span) else {
+            return Ok(());
+        };
+        lookup.fold(infcx)?;
         Ok(())
     }
 
@@ -641,7 +649,13 @@ impl BasicBlockEnvShape {
             // the non-`is_strg` case of `place_ty::fold`).
             (TyKind::Downcast(_, _, ty1_folded, _, _), _) => self.join_ty(ty1_folded, ty2),
             (_, TyKind::Downcast(_, _, ty2_folded, _, _)) => self.join_ty(ty1, ty2_folded),
-            _ => tracked_span_bug!("unexpected types: `{ty1:?}` - `{ty2:?}`"),
+            _ => {
+                tracked_span_bug!(
+                    "unexpected types: kind1={} kind2={} `{ty1:?}` - `{ty2:?}`",
+                    tykind_name(ty1),
+                    tykind_name(ty2)
+                )
+            }
         }
     }
 
@@ -980,5 +994,21 @@ impl TypeEnvTrace {
             });
 
         TypeEnvTrace(bindings)
+    }
+}
+
+fn tykind_name(ty: &Ty) -> &'static str {
+    match ty.kind() {
+        TyKind::Indexed(..) => "Indexed",
+        TyKind::Exists(..) => "Exists",
+        TyKind::Constr(..) => "Constr",
+        TyKind::Uninit => "Uninit",
+        TyKind::Ptr(..) => "Ptr",
+        TyKind::Discr(..) => "Discr",
+        TyKind::Param(..) => "Param",
+        TyKind::Downcast(..) => "Downcast",
+        TyKind::Blocked(..) => "Blocked",
+        TyKind::Infer(..) => "Infer",
+        TyKind::StrgRef(..) => "StrgRef",
     }
 }

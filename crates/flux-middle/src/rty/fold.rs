@@ -568,6 +568,7 @@ pub trait TypeFoldable: TypeVisitable {
     /// `Named(new::'_)` on the other at the same debruijn index and bound var.
     ///
     /// Use this rather than `erase_regions` when comparing types for structural equality.
+    /// This mirrors `rustc`'s `erase_and_anonymize_regions`.
     fn erase_and_anonymize_regions(&self) -> Self {
         struct RegionAnonymizer;
         impl TypeFolder for RegionAnonymizer {
