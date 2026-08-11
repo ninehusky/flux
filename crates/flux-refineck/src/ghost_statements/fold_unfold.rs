@@ -13,7 +13,10 @@ use flux_rustc_bridge::{
     ty::{AdtDef, GenericArgs, GenericArgsExt as _, List, Mutability, Ty, TyKind},
 };
 use itertools::{Itertools, repeat_n};
-use rustc_data_structures::{fx::FxHashMap, unord::UnordMap};
+use rustc_data_structures::{
+    fx::{FxHashMap, FxHashSet},
+    unord::UnordMap,
+};
 use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec, bit_set::DenseBitSet};
 use rustc_middle::mir::{FakeReadCause, START_BLOCK};
@@ -107,11 +110,55 @@ impl Env {
         }
     }
 
+    /// Iterate over *every* local, not just the arguments. A `&mut` argument can be moved into
+    /// a temporary (e.g. `let p = s;`, which MIR compiles to a move rather than a reborrow), and
+    /// the unfolding then happens under `*p`. Only folding `*arg` would leave the underlying
+    /// location unfolded at the return, which later shows up as an `Indexed` vs `Downcast`
+    /// mismatch in subtyping. Note [`Self::collect_fold_unfolds_at_goto`] already walks all
+    /// locals; this is the same invariant applied at the return.
     fn collect_folds_at_ret(&self, body: &Body, stmts: &mut StatementsAt) {
-        for local in body.args_iter() {
-            self.map[local].collect_folds_at_ret(&mut Place::new(local, vec![]), stmts);
+        let args: FxHashSet<Local> = body.args_iter().collect();
+        let owners = arg_ref_owners(body, &args);
+        for (local, node) in self.map.iter_enumerated() {
+            if !owners.contains(&local) {
+                continue;
+            }
+            // Arguments keep the pre-existing unconditional fold; a local that merely inherited
+            // the reference only gets one when it is genuinely unfolded, since its place may be
+            // dead at the return.
+            let only_unfolded = !args.contains(&local);
+            node.collect_folds_at_ret(&mut Place::new(local, vec![]), stmts, only_unfolded);
         }
     }
+}
+
+/// Locals that own a reference originating from an argument: the arguments themselves, plus any
+/// local a whole-local move can transfer one to. `let p = s;` compiles to `p = move s`, which
+/// hands the argument's reference to a temporary; the unfolding then happens under `*p`, so `*p`
+/// is what has to be folded back at the return.
+///
+/// Locals holding a *freshly borrowed* reference (e.g. `y` in `match x { E1::A(y) => .. }`) are
+/// deliberately excluded: at the return those places are typically already gone, and folding
+/// through them produces a fold the checker cannot place.
+fn arg_ref_owners(body: &Body, args: &FxHashSet<Local>) -> FxHashSet<Local> {
+    let mut owners = args.clone();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for bb in body.basic_blocks.iter() {
+            for stmt in &bb.statements {
+                if let StatementKind::Assign(dest, Rvalue::Use(Operand::Move(src))) = &stmt.kind
+                    && dest.projection.is_empty()
+                    && src.projection.is_empty()
+                    && owners.contains(&src.local)
+                    && owners.insert(dest.local)
+                {
+                    changed = true;
+                }
+            }
+        }
+    }
+    owners
 }
 
 type Modified = bool;
@@ -692,6 +739,20 @@ impl PlaceNode {
                 place.projection.pop();
                 return;
             }
+            // The place holds a `&mut` that is unfolded here but dead in the target. Folding the
+            // place itself (the arm below) folds the reference, not what it points at, leaving
+            // the underlying location unfolded on this edge only -- which later shows up as an
+            // `Indexed` vs `Downcast` mismatch when the two branches are joined. Fold through the
+            // deref instead. If the deref turns out not to be resolvable, `TypeEnv::fold` treats
+            // the statement as a no-op, so this is safe to emit whenever the node is unfolded.
+            (PlaceNode::Deref(ty, node1), PlaceNode::Ty(_))
+                if ty.is_mut_ref() && !node1.is_ty() =>
+            {
+                place.projection.push(PlaceElem::Deref);
+                stmts.insert(GhostStatement::Fold(place.clone()));
+                place.projection.pop();
+                return;
+            }
             (PlaceNode::Tuple(_, fields1), PlaceNode::Tuple(_, fields2)) => (fields1, fields2),
             (PlaceNode::Closure(.., fields1), PlaceNode::Closure(.., fields2))
             | (PlaceNode::Generator(.., fields1), PlaceNode::Generator(.., fields2)) => {
@@ -759,14 +820,24 @@ impl PlaceNode {
         }
     }
 
-    fn collect_folds_at_ret(&self, place: &mut Place, stmts: &mut StatementsAt) {
+    /// `only_unfolded` restricts the fold to places that are actually unfolded. It is set for
+    /// locals that are not arguments, whose place may well be dead or moved-out at the return;
+    /// emitting a fold for those makes the checker try to unfold a place it can't resolve.
+    fn collect_folds_at_ret(
+        &self,
+        place: &mut Place,
+        stmts: &mut StatementsAt,
+        only_unfolded: bool,
+    ) {
         let fields = match self {
             PlaceNode::Deref(ty, deref_ty) => {
                 place.projection.push(PlaceElem::Deref);
                 if ty.is_mut_ref() {
-                    stmts.insert(GhostStatement::Fold(place.clone()));
+                    if !only_unfolded || !deref_ty.is_ty() {
+                        stmts.insert(GhostStatement::Fold(place.clone()));
+                    }
                 } else if ty.is_box() {
-                    deref_ty.collect_folds_at_ret(place, stmts);
+                    deref_ty.collect_folds_at_ret(place, stmts, only_unfolded);
                 }
                 place.projection.pop();
                 return;
@@ -784,7 +855,7 @@ impl PlaceNode {
         };
         for (i, node) in fields.iter().enumerate() {
             place.projection.push(PlaceElem::Field(FieldIdx::new(i)));
-            node.collect_folds_at_ret(place, stmts);
+            node.collect_folds_at_ret(place, stmts, only_unfolded);
             place.projection.pop();
         }
         if let PlaceNode::Downcast(adt, ..) = self
