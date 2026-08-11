@@ -733,10 +733,27 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
 
         // For each *refined clause* at index `j` find a corresponding *unrefined clause* at index
         // `i` and save a mapping `i -> j`.
+        //
+        // Compare with regions ERASED. A refined clause and its unrefined counterpart differ
+        // only in refinements, never meaningfully in regions -- but every lifetime written in a
+        // surface where-bound is converted to a fresh region hole (`ty::Region::new_var`), which
+        // is never equal to the `ReBound`/`ReEarlyParam` that `predicates_of` carries. Comparing
+        // them literally therefore fails for ANY bound whose argument mentions a reference:
+        //
+        //     where F: FnOnce(&mut [u8][n]) -> R
+        //         -> "cannot determine corresponding unrefined predicate"
+        //
+        // while `F: FnOnce(usize[n]) -> usize` matches fine. Same reasoning as erasing regions in
+        // the args of an `AliasReft`: the region is not information here, it is noise that cannot
+        // be inferred from anything. `erase_and_anonymize_regions` rather than a plain erase,
+        // because a `for<'a>` bound also has to compare equal across differing binder names.
         let mut map = UnordMap::default();
         for (j, clause) in refined_clauses.iter().enumerate() {
-            let clause = clause.to_rustc(tcx);
-            let Some((i, _)) = unrefined_clauses.iter().find_position(|it| it.0 == clause) else {
+            let clause = tcx.erase_and_anonymize_regions(clause.to_rustc(tcx));
+            let Some((i, _)) = unrefined_clauses
+                .iter()
+                .find_position(|it| tcx.erase_and_anonymize_regions(it.0) == clause)
+            else {
                 self.emit_fail_to_match_predicates(def_id)?;
             };
             if map.insert(i, j).is_some() {
