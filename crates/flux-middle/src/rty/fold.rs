@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     global_env::GlobalEnv,
-    rty::{BoundReft, BoundRegion, Var, VariantSig, expr::HoleKind},
+    rty::{BoundReft, BoundRegion, BoundRegionKind, Var, VariantSig, expr::HoleKind},
 };
 
 pub trait TypeVisitor: Sized {
@@ -555,6 +555,33 @@ pub trait TypeFoldable: TypeVisitable {
         }
 
         self.fold_with(&mut RegionEraser)
+    }
+
+    /// Like [`TypeFoldable::erase_regions`], but also drops the *provenance* of bound
+    /// regions by resetting their `BoundRegionKind` to `Anon`.
+    ///
+    /// `erase_regions` deliberately leaves `ReBound` alone, which preserves the
+    /// `BoundRegionKind::Named(DefId)` recording where an elided lifetime was written.
+    /// That name only feeds diagnostics and pretty printing, but it makes two otherwise
+    /// identical types compare unequal: the same `fn(P<'_>)`, written once as a struct
+    /// field and once as a function argument, yields `Named(T::'_)` on one side and
+    /// `Named(new::'_)` on the other at the same debruijn index and bound var.
+    ///
+    /// Use this rather than `erase_regions` when comparing types for structural equality.
+    fn erase_and_anonymize_regions(&self) -> Self {
+        struct RegionAnonymizer;
+        impl TypeFolder for RegionAnonymizer {
+            fn fold_region(&mut self, r: &Region) -> Region {
+                match *r {
+                    ReBound(debruijn, br) => {
+                        ReBound(debruijn, BoundRegion { var: br.var, kind: BoundRegionKind::Anon })
+                    }
+                    _ => ReErased,
+                }
+            }
+        }
+
+        self.fold_with(&mut RegionAnonymizer)
     }
 }
 

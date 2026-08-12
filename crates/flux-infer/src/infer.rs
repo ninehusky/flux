@@ -11,7 +11,8 @@ use flux_middle::{
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, AliasKind, AliasTy, BaseTy, Binder, BoundReftKind, BoundVariableKinds,
+        self, AliasKind, AliasTy, BaseTy, Binder, BoundRegionKind, BoundReftKind,
+        BoundVariableKind, BoundVariableKinds,
         CoroutineObligPredicate, Ctor, ESpan, EVid, EarlyBinder, Expr, ExprKind, FieldProj,
         GenericArg, HoleKind, InferMode, Lambda, List, Loc, Mutability, Name, NameProvenance, Path,
         PolyVariant, PtrKind, RefineArgs, RefineArgsExt, Region, Sort, Ty, TyCtor, TyKind, Var,
@@ -1019,6 +1020,9 @@ impl<'a, E: LocEnv> Sub<'a, E> {
             | (BaseTy::Char, BaseTy::Char)
             | (BaseTy::RawPtrMetadata(_), BaseTy::RawPtrMetadata(_)) => Ok(()),
             (BaseTy::Dynamic(preds_a, _), BaseTy::Dynamic(preds_b, _)) => {
+                // NOTE: this comparison has the same latent problem as the `FnPtr` case
+                // below -- bound region provenance survives `erase_regions` -- but no
+                // repro exercises it yet, so it is left alone.
                 tracked_span_assert_eq!(preds_a.erase_regions(), preds_b.erase_regions());
                 Ok(())
             }
@@ -1032,7 +1036,10 @@ impl<'a, E: LocEnv> Sub<'a, E> {
                 Ok(())
             }
             (BaseTy::FnPtr(sig_a), BaseTy::FnPtr(sig_b)) => {
-                tracked_span_assert_eq!(sig_a.erase_regions(), sig_b.erase_regions());
+                tracked_span_assert_eq!(
+                    anonymize_bound_regions(sig_a),
+                    anonymize_bound_regions(sig_b)
+                );
                 Ok(())
             }
             (BaseTy::Never, BaseTy::Never) => Ok(()),
@@ -1235,6 +1242,32 @@ impl<'a, E: LocEnv> Sub<'a, E> {
         }
         Ok(())
     }
+}
+
+/// Strip the provenance of bound regions from a binder so that two structurally equal
+/// values compare equal.
+///
+/// [`TypeFoldable::erase_and_anonymize_regions`] normalises the regions appearing *inside*
+/// the value, but a [`Binder`] separately records one [`BoundVariableKind::Region`] per
+/// bound region, and that copy keeps the `BoundRegionKind::Named(DefId)` of wherever the
+/// lifetime was elided. Both have to be normalised or the comparison still fails.
+///
+/// Concretely, `fn(P<'_>)` written once as a struct field and once as a function argument
+/// produces `Named(T::'_)` on one side and `Named(new::'_)` on the other, at the same
+/// debruijn index and bound var. The name only feeds diagnostics, so it must not
+/// participate in equality.
+fn anonymize_bound_regions<T: TypeFoldable>(binder: &Binder<T>) -> Binder<T> {
+    let vars = binder
+        .vars()
+        .iter()
+        .map(|var| {
+            match var {
+                BoundVariableKind::Region(_) => BoundVariableKind::Region(BoundRegionKind::Anon),
+                other => other.clone(),
+            }
+        })
+        .collect();
+    Binder::bind_with_vars(binder.skip_binder_ref().erase_and_anonymize_regions(), vars)
 }
 
 fn mk_coroutine_obligations(
