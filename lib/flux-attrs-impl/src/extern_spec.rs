@@ -409,7 +409,22 @@ impl ExternFn {
             FnCtxt::Trait { trait_ } => quote!(< Self as #trait_ > :: #ident),
             FnCtxt::Free => quote!(#ident),
         };
-        let generic_args = generic_params_to_args(&self.sig.generics.params);
+        // Lifetimes must NOT go in the turbofish. A method's lifetime params are
+        // late-bound, and naming them explicitly at a call site is `E0794` ("cannot
+        // specify lifetime arguments explicitly if late bound lifetime parameters are
+        // present"). Rust infers them. Passing them made an extern spec for an impl
+        // method unwritable: eliding the lifetime is `E0106` because `prepare()` has
+        // rewritten `&self` into an ordinary parameter and the `&self` elision rule no
+        // longer applies, and naming it was this error.
+        let call_params: Punctuated<GenericParam, Token![,]> = self
+            .sig
+            .generics
+            .params
+            .iter()
+            .filter(|p| !matches!(p, GenericParam::Lifetime(_)))
+            .cloned()
+            .collect();
+        let generic_args = generic_params_to_args(&call_params);
         let fn_args = fn_params_to_args(&self.sig.inputs);
         if self.sig.unsafety.is_some() {
             self.block = Some(quote!({ unsafe { #fn_path :: <#generic_args> ( #fn_args ) } }));
