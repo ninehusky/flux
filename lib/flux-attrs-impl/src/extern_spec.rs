@@ -647,8 +647,15 @@ fn generic_params_to_fields(
                 GenericParam::Lifetime(syn::LifetimeParam { lifetime, .. }) => {
                     Some(parse_quote_spanned!(span=> &#lifetime ()))
                 }
+                // `PhantomData<T>`, not a bare `T`. A struct field of type `T`
+                // demands `T: Sized`, so a bare `T` here rejected every extern spec
+                // for an impl with a `?Sized` parameter with `E0277` -- including
+                // `impl<T: ?Sized, U: ?Sized> AsMut<U> for &mut T`, the blanket that
+                // a call on a `&mut T`-parameterised buffer actually resolves
+                // through. `PhantomData<T>` mentions `T` just as well and is sound
+                // for unsized `T`.
                 GenericParam::Type(syn::TypeParam { ident, .. }) => {
-                    Some(parse_quote_spanned!(span=> #ident))
+                    Some(parse_quote_spanned!(span=> core::marker::PhantomData<#ident>))
                 }
                 GenericParam::Const(..) => None,
             }
