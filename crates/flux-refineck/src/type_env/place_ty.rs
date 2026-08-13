@@ -900,12 +900,27 @@ fn fold(
                     .try_collect_vec()?;
 
                 let partially_moved = fields.iter().any(Ty::is_uninit);
+
+                // A field can still be blocked here: a `&mut` projected out of this struct and
+                // handed to a callee stays blocked until its `Unblock` ghost statement, which
+                // for a borrow live to the end of the function never runs before the fold at
+                // function exit. `check_constructor` compares field types structurally and has
+                // no case for `Blocked`, so passing one through ICEs in `tys`.
+                //
+                // Blocking is a property of the *place*, not of the value's shape, so fold the
+                // unblocked field types and mark the resulting struct blocked instead.
+                let blocked = fields
+                    .iter()
+                    .any(|ty| matches!(ty.kind(), TyKind::Blocked(_)));
+
                 let ty = if partially_moved {
                     Ty::uninit()
                 } else {
-                    infcx
+                    let fields = fields.iter().map(Ty::unblocked).collect_vec();
+                    let ty = infcx
                         .check_constructor(variant_sig, args, &fields, ConstrReason::Fold)
-                        .unwrap_or_else(|err| tracked_span_bug!("{err:?}"))
+                        .unwrap_or_else(|err| tracked_span_bug!("{err:?}"));
+                    if blocked { Ty::blocked(ty) } else { ty }
                 };
 
                 Ok(ty)
