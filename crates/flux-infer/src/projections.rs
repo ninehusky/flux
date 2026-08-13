@@ -20,7 +20,7 @@ use rustc_hir::def_id::DefId;
 use rustc_infer::traits::{BuiltinImplSource, Obligation};
 use rustc_middle::{
     traits::{ImplSource, ObligationCause},
-    ty::{TyCtxt, Variance},
+    ty::{RegionKind, TyCtxt, Variance, fold_regions},
 };
 use rustc_trait_selection::{
     solve::deeply_normalize,
@@ -385,6 +385,19 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
     ) -> QueryResult {
         let trait_ref = obligation.to_rustc(self.tcx()).trait_ref(self.tcx());
         let trait_ref = self.tcx().erase_and_anonymize_regions(trait_ref);
+        // `erase_and_anonymize_regions` deliberately leaves `ReBound` alone, so a
+        // higher-ranked lifetime in an impl's where-clause -- `F: FnMut(&u8)`, the shape
+        // of `core::future::poll_fn` -- still escapes into the trait ref we hand to
+        // selection. Selection ignores regions, so erase the escaping ones rather than
+        // giving up on the candidate.
+        let trait_ref = if trait_ref.has_escaping_bound_vars() {
+            let re_erased = self.tcx().lifetimes.re_erased;
+            fold_regions(self.tcx(), trait_ref, |r, _| {
+                if let RegionKind::ReBound(..) = r.kind() { re_erased } else { r }
+            })
+        } else {
+            trait_ref
+        };
         let trait_pred = Obligation::new(
             self.tcx(),
             ObligationCause::dummy(),
@@ -754,6 +767,16 @@ fn normalize_projection_ty_with_rustc<'tcx>(
     let tcx = genv.tcx();
     let projection_ty = obligation.to_rustc(tcx);
     let projection_ty = tcx.erase_and_anonymize_regions(projection_ty);
+    // Same reason as in `assemble_candidates_from_impls`: `erase_and_anonymize_regions`
+    // leaves escaping `ReBound` in place, and rustc's normalizer asserts on them.
+    let projection_ty = if projection_ty.has_escaping_bound_vars() {
+        let re_erased = tcx.lifetimes.re_erased;
+        fold_regions(tcx, projection_ty, |r, _| {
+            if let RegionKind::ReBound(..) = r.kind() { re_erased } else { r }
+        })
+    } else {
+        projection_ty
+    };
     let cause = ObligationCause::dummy();
     let param_env = tcx.param_env(def_id);
 
