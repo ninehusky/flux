@@ -624,6 +624,13 @@ impl BasicBlockEnvShape {
                     .collect();
                 Ty::downcast(adt1.clone(), args1.clone(), ty1.clone(), *variant1, fields)
             }
+            // Only one side was narrowed to a variant -- e.g. a `&mut` bound to a local inside
+            // one branch of a conditional unpacks the struct there but not on the path that
+            // skips the branch. The unfolded view cannot survive the merge, so join against the
+            // `Downcast`'s underlying type, which is exactly what folding that side yields (see
+            // the non-`is_strg` case of `place_ty::fold`).
+            (TyKind::Downcast(_, _, ty1_folded, _, _), _) => self.join_ty(ty1_folded, ty2),
+            (_, TyKind::Downcast(_, _, ty2_folded, _, _)) => self.join_ty(ty1, ty2_folded),
             _ => tracked_span_bug!("unexpected types: `{ty1:?}` - `{ty2:?}`"),
         }
     }
