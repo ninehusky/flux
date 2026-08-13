@@ -218,7 +218,22 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
                 // 2. Gather the ProjectionPredicates and solve them see issue-808.rs
                 self.resolve_projection_predicates(&mut subst, impl_def_id)?;
 
-                let args = subst.finish(self.tcx(), generics)?;
+                let mut args = subst.finish(self.tcx(), generics)?;
+
+                // A generic associated type has its own generic parameters *in addition to*
+                // the impl's, and `type_of` on the associated item expects arguments for both.
+                // `subst` above only ever sees the trait's parameters -- the zip against
+                // `impl_trait_ref.args` stops at the trait's arity -- so the GAT's own
+                // arguments have to be carried over from the obligation, which is spelled
+                // trait-args-then-own-args. Without this the GAT's own parameters are left
+                // without arguments and instantiation indexes past the end of the list.
+                args.extend(
+                    obligation
+                        .args
+                        .iter()
+                        .skip(impl_trait_ref.args.len())
+                        .cloned(),
+                );
 
                 // 3. Get the associated type in the impl block and apply the substitution to it
                 let assoc_type_id = tcx
