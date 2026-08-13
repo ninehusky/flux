@@ -203,6 +203,16 @@ impl<'a> TypeEnv<'a> {
         // ℓ: t1
         let t1 = self.bindings.lookup(path, infcx.span).fold(infcx)?;
 
+        // ℓ may already be blocked by an earlier `ptr(mut, ℓ)` → `&mut` conversion whose
+        // borrow was never unblocked: only `BorrowKind::Mut` borrows get an `Unblock` ghost
+        // statement, so taking a *shared* borrow of a `&mut` local blocks ℓ and nothing ever
+        // releases it. Relate the bound it was blocked with rather than the blocked type
+        // itself -- `Sub::tys` has no case for a blocked lhs, and the resulting mismatch is
+        // swallowed by the enclosing `enter_exists`, which then panics reporting an unsolved
+        // evar instead. rustc's borrow checker has already established that the earlier
+        // borrow is dead, which is what makes reusing ℓ here legal.
+        let t1 = if let TyKind::Blocked(bound) = t1.kind() { bound.clone() } else { t1 };
+
         // t1 <: t2
         let t2 = match bound {
             PtrToRefBound::Ty(t2) => {
