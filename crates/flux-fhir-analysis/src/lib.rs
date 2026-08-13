@@ -429,11 +429,14 @@ fn item_bounds(
     let parent = genv.tcx().local_parent(def_id.local_id());
     let wfckresults = genv.check_wf(parent)?;
     let opaque_ty = genv.fhir_node(def_id.local_id())?.expect_opaque_ty();
-    Ok(rty::EarlyBinder(
-        AfterSortck::new(genv, &wfckresults)
-            .into_conv_ctxt()
-            .conv_opaque_ty(opaque_ty)?,
-    ))
+    let clauses = AfterSortck::new(genv, &wfckresults)
+        .into_conv_ctxt()
+        .conv_opaque_ty(opaque_ty)?;
+    // Every other conv entry point runs its result through `struct_compat` to fill the
+    // holes `lift` leaves behind. This one did not, so a const hole inside an opaque's
+    // bounds survived into checking.
+    let clauses = struct_compat::opaque_ty(genv, &clauses, def_id)?;
+    Ok(rty::EarlyBinder(clauses))
 }
 
 fn generics_of(genv: GlobalEnv, def_id: MaybeExternId) -> QueryResult<rty::Generics> {

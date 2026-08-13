@@ -11,14 +11,14 @@ use flux_middle::{
     def_id::MaybeExternId,
     fhir,
     global_env::GlobalEnv,
-    queries::QueryResult,
+    queries::{QueryErr, QueryResult},
     rty::{
         self,
         fold::{TypeFoldable, TypeFolder, TypeSuperFoldable},
         refining::{Refine as _, Refiner},
     },
 };
-use flux_rustc_bridge::ty::{self, FieldIdx, VariantIdx};
+use flux_rustc_bridge::{lowering::Lower, ty::{self, FieldIdx, VariantIdx}};
 use rustc_ast::Mutability;
 use rustc_data_structures::unord::UnordMap;
 use rustc_type_ir::{DebruijnIndex, INNERMOST, InferConst};
@@ -65,6 +65,40 @@ pub(crate) fn fn_sig(
     zipper.errors.to_result()?;
 
     Ok(zipper.holes.replace_holes(fn_sig))
+}
+
+/// Fill the holes in an opaque type's bounds from the underlying rust bounds.
+///
+/// `lift_const_arg` turns *every* lifted const argument into a hole, to be filled by
+/// zipping against the rust type. `item_bounds` was the one conv entry point that never
+/// ran through this module, so a hole in an opaque's bounds -- the `4` in
+/// `async fn f() -> [u8; 4]`, which lives in `<Opaque as Future>::Output` and nowhere in
+/// the signature -- stayed `ConstKind::Infer` and was eventually handed to rustc's
+/// (empty) const unification table, panicking inside `ena`.
+///
+/// This is hole *filling*, not a compatibility check: unmatched clauses are skipped and
+/// holes we could not fill are left alone, so nothing here can produce a new user-visible
+/// error.
+pub(crate) fn opaque_ty(
+    genv: GlobalEnv,
+    clauses: &rty::Clauses,
+    def_id: MaybeExternId,
+) -> QueryResult<rty::Clauses> {
+    // Not `genv.item_bounds`: that is the query this runs inside. Take the rust bounds and
+    // refine them, which is exactly what the query itself does for defs with no flux node.
+    let expected = genv
+        .tcx()
+        .item_bounds(def_id.resolved_id())
+        .skip_binder()
+        .lower(genv.tcx())
+        .map_err(|err| QueryErr::unsupported(def_id.resolved_id(), err))?
+        .refine(&Refiner::default_for_item(genv, def_id.resolved_id())?)?;
+
+    let mut zipper = Zipper::new(genv, def_id);
+    zipper.zip_clauses(clauses, &expected);
+    zipper.errors.to_result()?;
+
+    Ok(zipper.holes.replace_holes_lenient(clauses))
 }
 
 pub(crate) fn variants(
@@ -173,6 +207,61 @@ impl Holes {
     fn replace_holes<T: TypeFoldable>(&self, t: &T) -> T {
         let mut this = self;
         t.fold_with(&mut this)
+    }
+
+    /// Like [`Holes::replace_holes`], but leaves a hole we have no filling for in place
+    /// instead of `bug!`ing. Used for opaque types, whose bounds also carry region holes
+    /// that nothing has ever filled -- turning those into a bug would be a regression,
+    /// not a fix.
+    fn replace_holes_lenient<T: TypeFoldable>(&self, t: &T) -> T {
+        t.fold_with(&mut LenientHoles(self))
+    }
+}
+
+struct LenientHoles<'a>(&'a Holes);
+
+impl TypeFolder for LenientHoles<'_> {
+    fn fold_sort(&mut self, sort: &rty::Sort) -> rty::Sort {
+        match sort {
+            rty::Sort::Infer(vid) => self.0.sorts.get(vid).cloned().unwrap_or_else(|| sort.clone()),
+            _ => sort.super_fold_with(self),
+        }
+    }
+
+    fn fold_ty(&mut self, ty: &rty::Ty) -> rty::Ty {
+        match ty.kind() {
+            rty::TyKind::Infer(vid) => self.0.types.get(vid).cloned().unwrap_or_else(|| ty.clone()),
+            _ => ty.super_fold_with(self),
+        }
+    }
+
+    fn fold_subset_ty(&mut self, constr: &rty::SubsetTy) -> rty::SubsetTy {
+        match &constr.bty {
+            rty::BaseTy::Infer(vid) => {
+                self.0
+                    .subset_tys
+                    .get(vid)
+                    .cloned()
+                    .unwrap_or_else(|| constr.clone())
+            }
+            _ => constr.super_fold_with(self),
+        }
+    }
+
+    fn fold_region(&mut self, r: &rty::Region) -> rty::Region {
+        match r {
+            rty::Region::ReVar(vid) => self.0.regions.get(vid).copied().unwrap_or(*r),
+            _ => *r,
+        }
+    }
+
+    fn fold_const(&mut self, ct: &rty::Const) -> rty::Const {
+        match ct.kind {
+            rty::ConstKind::Infer(InferConst::Var(cid)) => {
+                self.0.consts.get(&cid).cloned().unwrap_or_else(|| ct.clone())
+            }
+            _ => ct.super_fold_with(self),
+        }
     }
 }
 
@@ -435,6 +524,71 @@ impl<'genv, 'tcx> Zipper<'genv, 'tcx> {
             }
             _ => Err(Mismatch::new(a, b)),
         }
+    }
+
+    /// Pair up two lists of bounds and fill any hole in `a` from `b`.
+    ///
+    /// Matched by shape rather than by position: conv and rustc agree on the *set* of
+    /// bounds an opaque type has but not on their order. A clause with no counterpart is
+    /// skipped -- see the note on [`opaque_ty`] about this being hole filling, not
+    /// checking.
+    fn zip_clauses(&mut self, a: &rty::Clauses, b: &rty::Clauses) {
+        let mut used = vec![false; b.len()];
+        for clause_a in a {
+            let key_a = clause_key(clause_a);
+            let Some(i) = (0..b.len()).find(|&i| !used[i] && clause_key(&b[i]) == key_a) else {
+                continue;
+            };
+            used[i] = true;
+            let (kind_a, kind_b) = (clause_a.kind(), b[i].kind());
+            self.enter_binders(&kind_a, &kind_b, |this, kind_a, kind_b| {
+                this.zip_clause_kind(kind_a, kind_b);
+            });
+        }
+    }
+
+    fn zip_clause_kind(&mut self, a: &rty::ClauseKind, b: &rty::ClauseKind) {
+        let res = match (a, b) {
+            (rty::ClauseKind::Trait(a), rty::ClauseKind::Trait(b)) => {
+                self.zip_generic_args(&a.trait_ref.args, &b.trait_ref.args)
+            }
+            (rty::ClauseKind::Projection(a), rty::ClauseKind::Projection(b)) => {
+                self.zip_generic_args(&a.projection_ty.args, &b.projection_ty.args)
+                    .and_then(|()| {
+                        self.enter_binders(&a.term, &b.term, |this, a, b| this.zip_subset_ty(a, b))
+                    })
+            }
+            (rty::ClauseKind::TypeOutlives(a), rty::ClauseKind::TypeOutlives(b)) => {
+                self.zip_region(&a.1, &b.1);
+                self.zip_ty(&a.0, &b.0)
+            }
+            (rty::ClauseKind::RegionOutlives(a), rty::ClauseKind::RegionOutlives(b)) => {
+                self.zip_region(&a.0, &b.0);
+                self.zip_region(&a.1, &b.1);
+                Ok(())
+            }
+            (rty::ClauseKind::ConstArgHasType(ct_a, ty_a), rty::ClauseKind::ConstArgHasType(ct_b, ty_b)) => {
+                let _ = self.zip_const(ct_a, ct_b);
+                self.zip_ty(ty_a, ty_b)
+            }
+            _ => Ok(()),
+        };
+        // A shape mismatch inside a bound means we simply do not learn that hole's value.
+        let _ = res;
+    }
+
+    fn zip_generic_args(
+        &mut self,
+        a: &rty::GenericArgs,
+        b: &rty::GenericArgs,
+    ) -> Result<(), Mismatch> {
+        if a.len() != b.len() {
+            return Err(Mismatch::new(a, b));
+        }
+        for (arg_a, arg_b) in iter::zip(a, b) {
+            self.zip_generic_arg(arg_a, arg_b)?;
+        }
+        Ok(())
     }
 
     fn zip_region(&mut self, a: &rty::Region, b: &ty::Region) {
@@ -893,5 +1047,17 @@ mod errors {
                 expected_fields: expected_variant.fields.len(),
             }
         }
+    }
+}
+
+/// Shape key used to pair a converted bound with the rust bound it came from.
+fn clause_key(clause: &rty::Clause) -> (usize, Option<rustc_hir::def_id::DefId>) {
+    match clause.kind_skipping_binder() {
+        rty::ClauseKind::Trait(pred) => (0, Some(pred.trait_ref.def_id)),
+        rty::ClauseKind::Projection(pred) => (1, Some(pred.projection_ty.def_id)),
+        rty::ClauseKind::RegionOutlives(_) => (2, None),
+        rty::ClauseKind::TypeOutlives(_) => (3, None),
+        rty::ClauseKind::ConstArgHasType(..) => (4, None),
+        rty::ClauseKind::UnstableFeature(_) => (5, None),
     }
 }
