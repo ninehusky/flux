@@ -457,6 +457,38 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
     }
 }
 
+/// Normalizes a [`ty::Clause`] into a form in which regions carry no information: every region is
+/// replaced by `'erased` (*including* bound ones) and every binder is skipped.
+///
+/// This is strictly coarser than [`TyCtxt::erase_and_anonymize_regions`], which preserves
+/// `ReBound` and the `bound_vars` list because they matter for subtyping. We only use it to *pair
+/// up* a refined clause with its unrefined counterpart in [`ConvCtxt::match_clauses`], where a
+/// difference in binders is an artifact of how surface where-bounds are converted, not a real
+/// difference between the two clauses. It must not be used anywhere the result is treated as a
+/// type.
+fn erase_all_regions<'tcx>(tcx: TyCtxt<'tcx>, clause: ty::Clause<'tcx>) -> ty::ClauseKind<'tcx> {
+    struct EraseAllRegions<'tcx> {
+        tcx: TyCtxt<'tcx>,
+    }
+
+    impl<'tcx> ty::TypeFolder<TyCtxt<'tcx>> for EraseAllRegions<'tcx> {
+        fn cx(&self) -> TyCtxt<'tcx> {
+            self.tcx
+        }
+
+        fn fold_region(&mut self, _: ty::Region<'tcx>) -> ty::Region<'tcx> {
+            self.tcx.lifetimes.re_erased
+        }
+    }
+
+    // Skip the binder *without* rebinding: the result is only ever compared, never used as a type,
+    // so leaving the (now vacuous) bound variables behind is fine.
+    rustc_middle::ty::TypeFoldable::fold_with(
+        clause.kind().skip_binder(),
+        &mut EraseAllRegions { tcx },
+    )
+}
+
 fn variant_idx(tcx: TyCtxt, variant_def_id: DefId) -> rty::VariantIdx {
     let enum_def_id = tcx.parent(variant_def_id);
     tcx.adt_def(enum_def_id)
@@ -745,14 +777,24 @@ impl<'genv, 'tcx: 'genv, P: ConvPhase<'genv, 'tcx>> ConvCtxt<P> {
         //
         // while `F: FnOnce(usize[n]) -> usize` matches fine. Same reasoning as erasing regions in
         // the args of an `AliasReft`: the region is not information here, it is noise that cannot
-        // be inferred from anything. `erase_and_anonymize_regions` rather than a plain erase,
-        // because a `for<'a>` bound also has to compare equal across differing binder names.
+        // be inferred from anything.
+        //
+        // Erasing *free* regions is not enough, because the two sides also disagree on binders.
+        // Rustc's `Fn`-sugar makes elided lifetimes late bound, so `predicates_of` yields
+        // `for<'a> F: FnOnce<(&'a mut [u8],)>`: a `Binder` with one `bound_vars` entry and a
+        // `ReBound` inside. A surface where-bound is always converted under an *empty* binder
+        // (`bound_generic_params` is `&[]` in desugaring) with a region hole inside, and
+        // `erase_and_anonymize_regions` deliberately preserves `ReBound` and the `bound_vars`
+        // list, so the two never compare equal. We therefore compare the clause *kinds* with the
+        // binders skipped and *all* regions erased, bound ones included. This can only conflate
+        // two bounds that differ nowhere but in their regions, which is already the case for free
+        // regions.
         let mut map = UnordMap::default();
         for (j, clause) in refined_clauses.iter().enumerate() {
-            let clause = tcx.erase_and_anonymize_regions(clause.to_rustc(tcx));
+            let clause = erase_all_regions(tcx, clause.to_rustc(tcx));
             let Some((i, _)) = unrefined_clauses
                 .iter()
-                .find_position(|it| tcx.erase_and_anonymize_regions(it.0) == clause)
+                .find_position(|it| erase_all_regions(tcx, it.0) == clause)
             else {
                 self.emit_fail_to_match_predicates(def_id)?;
             };
