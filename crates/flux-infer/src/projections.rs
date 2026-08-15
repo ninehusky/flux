@@ -348,11 +348,20 @@ impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
         candidates: &mut Vec<Candidate>,
     ) {
         let tcx = self.tcx();
-        let rustc_obligation = obligation.to_rustc(tcx);
+        // Compare modulo regions. The obligation went through `erase_regions` in
+        // `deeply_normalize`, but a clause in the param env keeps whatever regions it was
+        // written with -- in particular the bound region of a higher-ranked bound like
+        // `F: FnOnce(&[u8]{v: v == n})`, which desugars to `for<'a> F: FnOnce(&'a [u8]{..})`.
+        // Comparing those syntactically makes the refined clause invisible, we fall back to
+        // `normalize_projection_ty_with_rustc`, and every refinement attached to the clause
+        // (e.g. the precondition of a `Fn*` bound) is silently dropped.
+        let erase_regions = |alias_ty| fold_regions(tcx, alias_ty, |_, _| tcx.lifetimes.re_erased);
+        let rustc_obligation = erase_regions(obligation.to_rustc(tcx));
 
         for predicate in predicates {
             if let Some(pred) = predicate.as_projection_clause()
-                && pred.skip_binder_ref().projection_ty.to_rustc(tcx) == rustc_obligation
+                && erase_regions(pred.skip_binder_ref().projection_ty.to_rustc(tcx))
+                    == rustc_obligation
             {
                 candidates.push(ctor(pred));
             }
