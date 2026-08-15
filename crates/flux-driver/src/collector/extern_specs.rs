@@ -530,7 +530,15 @@ impl<'a, 'sess, 'tcx> ExternSpecCollector<'a, 'sess, 'tcx> {
         // the impl onto). After `check_generics` has verified param names and indices match,
         // raw Ty equality is sound for the cases we want to catch (concrete type mismatches
         // like `Range<usize>` vs `Range<A>`).
-        if local_self_ty != extern_self_ty {
+        //
+        // Regions are erased first. The two impls name their lifetime parameters differently --
+        // an elided lifetime in the external impl is an anonymous `'_` that an extern spec can
+        // only reproduce under some other name -- so `&'a mut T` and `&'_ mut T` are distinct
+        // `Ty`s even though they are the same type for every purpose Flux cares about. As in
+        // `conv::match_clauses`, the region here is noise, not information.
+        if tcx.erase_and_anonymize_regions(local_self_ty)
+            != tcx.erase_and_anonymize_regions(extern_self_ty)
+        {
             // Emit on the user's impl block (compiletest matches `//~ ERROR` against the
             // primary span line). The dummy `__FluxExternImplStruct` wrapper's self_ty has
             // a macro-generated span that doesn't land on user source.
@@ -620,18 +628,26 @@ impl<'a, 'sess, 'tcx> ExternSpecCollector<'a, 'sess, 'tcx> {
 }
 
 fn cmp_generic_param_def(a: &ty::GenericParamDef, b: &ty::GenericParamDef) -> bool {
-    if a.name != b.name {
-        return false;
-    }
     if a.index != b.index {
         return false;
     }
-    matches!(
-        (&a.kind, &b.kind),
-        (ty::GenericParamDefKind::Lifetime, ty::GenericParamDefKind::Lifetime)
-            | (ty::GenericParamDefKind::Type { .. }, ty::GenericParamDefKind::Type { .. })
-            | (ty::GenericParamDefKind::Const { .. }, ty::GenericParamDefKind::Const { .. })
-    )
+    match (&a.kind, &b.kind) {
+        // Lifetime parameter *names* are not comparable. An impl header may elide a lifetime, and
+        // rustc then invents an anonymous parameter named `'_` for it -- which is what
+        // `core::convert`'s `impl<T, U> AsMut<U> for &mut T` has. An extern spec cannot reproduce
+        // that name: `'_` is not a legal parameter name, and the expansion has to name the
+        // lifetime anyway because it repeats the self type in positions where Rust forbids
+        // elision. Nothing else is relaxed: the two lists must still agree on length, and every
+        // parameter on index and kind, so the positional correspondence that `insert_extern_id`
+        // relies on is unaffected. A lifetime's name is not observable in a refinement, so there
+        // is nothing here to get wrong.
+        (ty::GenericParamDefKind::Lifetime, ty::GenericParamDefKind::Lifetime) => true,
+        (ty::GenericParamDefKind::Type { .. }, ty::GenericParamDefKind::Type { .. })
+        | (ty::GenericParamDefKind::Const { .. }, ty::GenericParamDefKind::Const { .. }) => {
+            a.name == b.name
+        }
+        _ => false,
+    }
 }
 
 fn ident_or_def_span(tcx: TyCtxt, def_id: impl Into<DefId>) -> Span {
