@@ -404,10 +404,79 @@ pub(crate) fn trait_impl_subtyping<'genv, 'tcx>(
         genv.fn_sig(trait_method_id)?
             .instantiate(tcx, &trait_method_args, &trait_refine_args);
     let impl_sig = genv.fn_sig(impl_method_id)?;
-    let sub_sig = SubFn::Poly(impl_method_id, impl_sig, impl_method_args);
+    let sub_sig = SubFn::Poly(impl_method_id, impl_sig, impl_method_args.clone());
 
     check_fn_subtyping(&mut infcx, sub_sig, &trait_fn_sig, span)?;
+    check_fn_trait_clauses_against_trait(
+        genv,
+        &mut infcx,
+        trait_method_id,
+        &trait_method_args,
+        &trait_refine_args,
+        impl_method_id,
+        &impl_method_args,
+        span,
+    )?;
     Ok(Some(root_ctxt))
+}
+
+/// A refinement on the argument of a `Fn*` bound only constrains the *body* of the function
+/// that declares it. An impl method with no `#[flux::sig]` gets the plain, unrefined bound
+/// from its rust where-clause, so a trait method spec like
+///
+/// ```ignore
+/// #[flux::sig(fn(self: Self, len: usize[@n], f: F) -> R where F: FnOnce(&mut [u8]{v: v == n}) -> R)]
+/// ```
+///
+/// used to buy nothing in the impl: the body could call `f` with a buffer of any length.
+/// `check_fn_subtyping` doesn't catch this because a `Fn*` bound lives in `predicates_of`,
+/// not in the `FnSig`.
+///
+/// So compare the bounds directly. The impl body assumes `f` has the type its own bound
+/// gives it; that is only sound if the type the *trait* promises is a subtype of it.
+#[expect(clippy::too_many_arguments)]
+fn check_fn_trait_clauses_against_trait(
+    genv: GlobalEnv,
+    infcx: &mut InferCtxt,
+    trait_method_id: DefId,
+    trait_method_args: &rty::GenericArgs,
+    trait_refine_args: &rty::RefineArgs,
+    impl_method_id: DefId,
+    impl_method_args: &rty::GenericArgs,
+    span: Span,
+) -> InferResult {
+    let tcx = genv.tcx();
+
+    let trait_clauses = genv
+        .predicates_of(trait_method_id)?
+        .predicates()
+        .instantiate(tcx, trait_method_args, trait_refine_args);
+    let trait_clauses = Clause::split_off_fn_trait_clauses(genv, &trait_clauses).1;
+    if trait_clauses.is_empty() {
+        return Ok(());
+    }
+
+    let impl_refine_args = RefineArgs::identity_for_item(genv, impl_method_id)?;
+    let impl_clauses = genv
+        .predicates_of(impl_method_id)?
+        .predicates()
+        .instantiate(tcx, impl_method_args, &impl_refine_args);
+    let impl_clauses = Clause::split_off_fn_trait_clauses(genv, &impl_clauses).1;
+
+    for trait_clause in &trait_clauses {
+        let self_ty = trait_clause.skip_binder_ref().self_ty.to_rustc(tcx);
+        for impl_clause in &impl_clauses {
+            if impl_clause.skip_binder_ref().self_ty.to_rustc(tcx) != self_ty
+                || impl_clause.skip_binder_ref().kind != trait_clause.skip_binder_ref().kind
+            {
+                continue;
+            }
+            let sub_sig = trait_clause.map_ref(|pred| pred.fndef_sig());
+            let super_sig = impl_clause.map_ref(|pred| pred.fndef_sig());
+            check_fn_subtyping(infcx, SubFn::Mono(sub_sig), &super_sig, span)?;
+        }
+    }
+    Ok(())
 }
 
 fn find_trait_item(
