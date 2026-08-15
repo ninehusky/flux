@@ -141,6 +141,21 @@ impl<'a> TypeEnv<'a> {
         let result = self.bindings.lookup_unfolding(infcx, place, span)?;
         if result.is_strg && mutbl == Mutability::Mut {
             Ok(Ty::ptr(PtrKind::Mut(re), result.path()))
+        } else if result.is_strg && matches!(result.ty.kind(), TyKind::Downcast(..)) {
+            // A reference has no notion of variant, so a `Downcast` must not end up under one --
+            // `ptr_to_ref` folds for the same reason. The place can still be unfolded here with no
+            // fold statement for this point: the fold/unfold analysis attributes an unfold done
+            // through a `&mut` to the *reference's* place (`*_2`) while the checker does it on the
+            // pointee's own path via `PtrKind::Mut`, so a use of the pointee's own place is never
+            // asked to fold. `Sub::tys` has no rule relating `Downcast` to `Indexed`:
+            //
+            //     match &mut e { E::B(_) => takes(&e), .. }
+            //         -> internal flux error: incompatible types: `E::B(i32[a])` - `E[?0e]`
+            //
+            // Only for strong places holding a `Downcast`: folding a non-strong place recovers a
+            // stale saved type.
+            let ty = result.fold_without_update(infcx)?;
+            Ok(Ty::mk_ref(re, ty, mutbl))
         } else {
             // FIXME(nilehmann) we should block the place here. That would require a notion
             // of shared vs mutable block types because sometimes blocked places from a shared

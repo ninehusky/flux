@@ -257,6 +257,7 @@ struct ExternItemImpl {
 
 impl ExternItemImpl {
     fn prepare(&mut self) {
+        name_elided_lifetimes(&mut self.self_ty, &mut self.generics);
         flux_tool_attrs(&mut self.attrs);
         let cx = if let Some(trait_) = self.trait_.as_ref().map(|(_, path, _)| path) {
             FnCtxt::TraitImpl { trait_, self_ty: &self.self_ty }
@@ -541,6 +542,95 @@ impl Parse for ExternItemTrait {
         }
 
         Ok(ExternItemTrait { attrs, trait_token, ident, generics, supertrait, brace_token, items })
+    }
+}
+
+/// Gives a name to every elided lifetime in an impl's self type and declares the fresh names on
+/// the impl's generics.
+///
+/// An impl header may elide a lifetime -- `impl<T, U> AsMut<U> for &mut T` is how `core` writes
+/// the forwarding impl -- but the expansion has to repeat the self type in two positions where
+/// Rust forbids elision: a field of the dummy struct (`E0106`) and the `where #self_ty: #trait_`
+/// predicate of `__flux_extern_extract_impl_id` (`E0637`). Rewriting `&mut T` to `&'0 mut T` and
+/// adding `'0` to the impl is exactly what rustc does to the external impl anyway: it creates one
+/// anonymous early-bound lifetime parameter per elided lifetime, in source order. The two
+/// parameter lists therefore still agree on length, order and kind; they disagree only on the
+/// names, which `check_generics` does not compare for lifetimes.
+///
+/// Lifetimes elided by omitting a path's arguments entirely (`Foo` for `struct Foo<'a>`) are not
+/// handled; write `Foo<'a>` instead.
+fn name_elided_lifetimes(self_ty: &mut Type, generics: &mut Generics) {
+    struct Namer {
+        fresh: Vec<syn::Lifetime>,
+    }
+
+    impl Namer {
+        fn next(&mut self) -> syn::Lifetime {
+            let lifetime = syn::Lifetime::new(
+                &format!("'__flux_elided{}", self.fresh.len()),
+                Span::call_site(),
+            );
+            self.fresh.push(lifetime.clone());
+            lifetime
+        }
+
+        fn is_elided(lifetime: &Option<syn::Lifetime>) -> bool {
+            match lifetime {
+                None => true,
+                Some(lifetime) => lifetime.ident == "_",
+            }
+        }
+
+        fn visit_ty(&mut self, ty: &mut Type) {
+            match ty {
+                Type::Reference(ty) => {
+                    if Self::is_elided(&ty.lifetime) {
+                        ty.lifetime = Some(self.next());
+                    }
+                    self.visit_ty(&mut ty.elem);
+                }
+                Type::Slice(ty) => self.visit_ty(&mut ty.elem),
+                Type::Array(ty) => self.visit_ty(&mut ty.elem),
+                Type::Ptr(ty) => self.visit_ty(&mut ty.elem),
+                Type::Paren(ty) => self.visit_ty(&mut ty.elem),
+                Type::Group(ty) => self.visit_ty(&mut ty.elem),
+                Type::Tuple(ty) => {
+                    for elem in &mut ty.elems {
+                        self.visit_ty(elem);
+                    }
+                }
+                Type::Path(ty) => {
+                    if let Some(qself) = &mut ty.qself {
+                        self.visit_ty(&mut qself.ty);
+                    }
+                    for segment in &mut ty.path.segments {
+                        if let syn::PathArguments::AngleBracketed(args) = &mut segment.arguments {
+                            for arg in &mut args.args {
+                                match arg {
+                                    GenericArgument::Lifetime(lifetime)
+                                        if lifetime.ident == "_" =>
+                                    {
+                                        *lifetime = self.next();
+                                    }
+                                    GenericArgument::Type(ty) => self.visit_ty(ty),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut namer = Namer { fresh: vec![] };
+    namer.visit_ty(self_ty);
+    // Prepend: a lifetime parameter may not follow a type or const parameter.
+    for lifetime in namer.fresh.into_iter().rev() {
+        generics
+            .params
+            .insert(0, GenericParam::Lifetime(syn::LifetimeParam::new(lifetime)));
     }
 }
 

@@ -415,6 +415,17 @@ impl LookupResult<'_> {
         Ok(ty)
     }
 
+    /// Like [`LookupResult::fold`], but leaves the place *unfolded* in the environment.
+    ///
+    /// Use this when a folded view of the place is needed for a value that cannot be written
+    /// through (a shared borrow), and no fold statement was emitted for this program point. The
+    /// fold/unfold analysis decides the environment's shape at every join, so folding a place it
+    /// did not ask to fold desynchronises the branches and `BasicBlockEnvShape::join_ty` then has
+    /// no rule relating the folded and unfolded sides.
+    pub(crate) fn fold_without_update(self, infcx: &mut InferCtxtAt) -> QueryResult<Ty> {
+        fold(self.bindings, infcx, &self.ty, self.is_strg)
+    }
+
     pub(crate) fn path(&self) -> Path {
         self.cursor.to_path()
     }
