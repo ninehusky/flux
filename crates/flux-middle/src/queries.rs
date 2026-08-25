@@ -34,6 +34,7 @@ use crate::{
     global_env::GlobalEnv,
     rty::{
         self, AliasReft, Expr, GenericArg,
+        fold::TypeVisitable,
         refining::{self, Refine, Refiner, refine_generic_param_def},
     },
 };
@@ -293,6 +294,7 @@ pub struct Queries<'genv, 'tcx> {
     fn_sig: Cache<DefId, QueryResult<rty::EarlyBinder<rty::PolyFnSig>>>,
     sort_decl_param_count: Cache<FluxDefId, usize>,
     no_panic: Cache<DefId, bool>,
+    no_panic_expr: Cache<DefId, Expr>,
     assume_parametric_params: Cache<DefId, UnordSet<u32>>,
     call_graph: OnceCell<CallGraph<'tcx>>,
     /// The no-panic inference result for the local crate, keyed by `NodeKey`.
@@ -338,6 +340,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             fn_sig: Default::default(),
             sort_decl_param_count: Default::default(),
             no_panic: Default::default(),
+            no_panic_expr: Default::default(),
             assume_parametric_params: Default::default(),
             call_graph: Default::default(),
             inferred_no_panic: Default::default(),
@@ -738,6 +741,42 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                 |def_id| genv.cstore().no_panic(def_id),
                 |_| false,
             )
+        })
+    }
+
+    /// The condition under which `def_id` is required to be panic-free, as a refinement
+    /// expression.
+    ///
+    /// A closure has no signature of its own, so its panic-freedom obligation is the one of the
+    /// enclosing item. When that obligation is *conditional* -- `#[flux::no_panic_if(..)]` -- the
+    /// condition lives on the enclosing item's `fn_sig`, which the boolean [`Self::no_panic`]
+    /// cannot express. Walk up to the first enclosing non-closure function and take its condition.
+    ///
+    /// The condition may mention the enclosing signature's bound refinement variables, which have
+    /// no meaning here; in that case fall back to the boolean answer.
+    pub(crate) fn no_panic_expr(&self, genv: GlobalEnv, def_id: DefId) -> Expr {
+        run_with_cache(&self.no_panic_expr, def_id, || {
+            let fallback = || if genv.no_panic(def_id) { Expr::tt() } else { Expr::ff() };
+
+            let Some(local_id) = def_id.as_local() else { return fallback() };
+            let tcx = genv.tcx();
+
+            let mut current_id = tcx.opt_local_parent(local_id);
+            while let Some(cur) = current_id {
+                if !genv.is_dummy(cur)
+                    && !matches!(tcx.def_kind(cur), DefKind::Closure)
+                    && tcx.def_kind(cur).is_fn_like()
+                {
+                    let Ok(fn_sig) = genv.fn_sig(cur) else { return fallback() };
+                    let no_panic = fn_sig.skip_binder_ref().skip_binder_ref().no_panic();
+                    if no_panic.has_escaping_bvars() {
+                        return fallback();
+                    }
+                    return no_panic;
+                }
+                current_id = tcx.opt_local_parent(cur);
+            }
+            fallback()
         })
     }
 

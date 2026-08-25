@@ -540,6 +540,14 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.inner.queries.no_panic(self, def_id.into_query_param())
     }
 
+    /// The condition under which the function must be panic-free. See
+    /// [`crate::queries::Queries::no_panic_expr`].
+    pub fn no_panic_expr(self, def_id: impl IntoQueryParam<DefId>) -> rty::Expr {
+        self.inner
+            .queries
+            .no_panic_expr(self, def_id.into_query_param())
+    }
+
     pub fn assume_parametric_params(self, def_id: impl IntoQueryParam<DefId>) -> UnordSet<u32> {
         self.inner
             .queries

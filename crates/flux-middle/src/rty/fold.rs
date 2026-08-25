@@ -966,7 +966,12 @@ impl TypeSuperFoldable for BaseTy {
                 BaseTy::Array(ty.try_fold_with(folder)?, c.try_fold_with(folder)?)
             }
             BaseTy::Closure(did, args, gen_args, no_panic) => {
-                BaseTy::Closure(*did, args.try_fold_with(folder)?, gen_args.clone(), *no_panic)
+                BaseTy::Closure(
+                    *did,
+                    args.try_fold_with(folder)?,
+                    gen_args.clone(),
+                    no_panic.try_fold_with(folder)?,
+                )
             }
             BaseTy::Coroutine(did, resume_ty, args, gen_args) => {
                 BaseTy::Coroutine(

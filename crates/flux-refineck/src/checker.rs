@@ -1511,7 +1511,10 @@ impl<'ck, 'genv, 'tcx, M: Mode> Checker<'ck, 'genv, 'tcx, M> {
         let closure_id = did.expect_local();
         let span = tcx.def_span(closure_id);
         let body = genv.mir(closure_id).with_span(span)?;
-        let no_panic = self.genv.no_panic(*did);
+        // A closure body inherits the enclosing item's panic-freedom obligation. When that
+        // obligation is conditional -- `#[flux::no_panic_if(..)]` -- the condition is what the
+        // body must be checked against, not a fixed `true`/`false`.
+        let no_panic = self.fn_sig.no_panic();
         let closure_sig = rty::to_closure_sig(tcx, closure_id, upvar_tys, args, poly_sig, no_panic);
         Checker::run(
             infcx.change_item(closure_id, &body.infcx),
@@ -1539,7 +1542,7 @@ impl<'ck, 'genv, 'tcx, M: Mode> Checker<'ck, 'genv, 'tcx, M> {
         // (3) "Save" the closure type in the `closures` map
         self.inherited.closures.insert(*did, poly_sig);
         // (4) Return the closure type
-        let no_panic = self.genv.no_panic(*did);
+        let no_panic = self.fn_sig.no_panic();
         Ok(Ty::closure(*did, upvar_tys, args, no_panic))
     }
 

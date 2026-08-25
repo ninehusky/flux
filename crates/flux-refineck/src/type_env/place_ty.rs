@@ -571,7 +571,7 @@ impl<'a, 'infcx, 'genv, 'tcx> Unfolder<'a, 'infcx, 'genv, 'tcx> {
                 let mut upvar_tys = upvar_tys.to_vec();
                 upvar_tys[f.as_usize()] = upvar_tys[f.as_usize()].try_fold_with(self)?;
                 Ty::indexed(
-                    BaseTy::Closure(*def_id, upvar_tys.into(), args.clone(), *no_panic),
+                    BaseTy::Closure(*def_id, upvar_tys.into(), args.clone(), no_panic.clone()),
                     idx.clone(),
                 )
             }
@@ -723,7 +723,7 @@ where
             TyKind::Indexed(BaseTy::Closure(def_id, upvar_tys, args, no_panic), idx) => {
                 let upvar_tys = self.fold_field_at(upvar_tys, f);
                 Ty::indexed(
-                    BaseTy::Closure(*def_id, upvar_tys, args.clone(), *no_panic),
+                    BaseTy::Closure(*def_id, upvar_tys, args.clone(), no_panic.clone()),
                     idx.clone(),
                 )
             }
@@ -947,7 +947,10 @@ fn fold(
                 // `check_constructor` would have to check the blocked type against the field's
                 // declared type, and blocked types have no subtyping rule. Leave the place
                 // unfolded; the borrow has to be returned before the struct can be rebuilt.
-                if fields.iter().any(|ty| matches!(ty.kind(), TyKind::Blocked(_))) {
+                if fields
+                    .iter()
+                    .any(|ty| matches!(ty.kind(), TyKind::Blocked(_)))
+                {
                     return Ok(Ty::downcast(
                         adt.clone(),
                         args.clone(),
