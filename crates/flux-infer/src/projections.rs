@@ -67,6 +67,23 @@ impl<T: TypeFoldable> NormalizeExt for T {
     }
 }
 
+/// The clauses in scope for `def_id`, including the ones it inherits from its parents.
+///
+/// [`GlobalEnv::predicates_of`] returns only an item's *own* clauses; the rest live on the
+/// parent chain. A closure in particular has no clauses of its own, so reading only its own
+/// would leave the body of every closure with an empty param env -- and a refined `Fn*` bound
+/// on the enclosing function invisible while checking that body.
+fn collect_param_env(genv: GlobalEnv, def_id: DefId) -> QueryResult<List<Clause>> {
+    let mut clauses = vec![];
+    let mut next = Some(def_id);
+    while let Some(did) = next {
+        let predicates = genv.predicates_of(did)?.instantiate_identity();
+        clauses.extend(predicates.predicates.iter().cloned());
+        next = predicates.parent;
+    }
+    Ok(List::from_vec(clauses))
+}
+
 struct Normalizer<'a, 'infcx, 'genv, 'tcx> {
     infcx: InferCtxtAt<'a, 'infcx, 'genv, 'tcx>,
     selcx: SelectionContext<'infcx, 'tcx>,
@@ -76,8 +93,7 @@ struct Normalizer<'a, 'infcx, 'genv, 'tcx> {
 
 impl<'a, 'infcx, 'genv, 'tcx> Normalizer<'a, 'infcx, 'genv, 'tcx> {
     fn new(infcx: InferCtxtAt<'a, 'infcx, 'genv, 'tcx>) -> QueryResult<Self> {
-        let predicates = infcx.genv.predicates_of(infcx.def_id)?;
-        let param_env = predicates.instantiate_identity().predicates.clone();
+        let param_env = collect_param_env(infcx.genv, infcx.def_id)?;
         let selcx = SelectionContext::new(infcx.region_infcx);
         let scope = infcx.cursor().marker().scope().unwrap();
         Ok(Normalizer { infcx, selcx, param_env, scope })
